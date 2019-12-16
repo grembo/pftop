@@ -1,0 +1,487 @@
+.\" $Id: pftop.8,v 1.20 2007/11/07 06:33:14 canacar Exp $
+.\"
+.\" Copyright (c) 2001, 2007 Can Erkin Acar <canacar@openbsd.org>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.\"
+.Dd March 22, 2002
+.Dt PFTOP 8
+.Os
+.Sh NAME
+.Nm pftop
+.Nd display pf states 
+.Sh SYNOPSIS
+.Nm pftop
+.Op Fl abDhir
+.Op Fl c Ar cache
+.Op Fl d Ar count
+.Op Fl f Ar filter
+.Op Fl o Ar field
+.Op Fl s Ar time
+.Op Fl v Ar view
+.Op Fl w Ar width
+.Op Ar number
+.Sh DESCRIPTION
+.Nm
+displays the active packetfilter states and rules, and periodically
+updates this information.
+If standard output is an intelligent terminal (see below) then as
+many states as will fit on the terminal screen are displayed by
+default.
+Otherwise, a good number of them are shown (around 20).
+If
+.Ar number
+is given, then the top
+.Ar number
+states will be displayed instead of the default.
+The displayed states are filtered according to the
+.Ar filter 
+specification.
+.Pp
+The options are as follows:
+.Bl -tag -width Ds
+.It Fl a
+List all states.
+This option is only valid in batch mode.
+.It Fl b
+Use
+.Em batch
+mode.
+In this mode, all input from the terminal is ignored.
+Interrupt characters (such as
+.Ql ^C
+and
+.Ql ^\e )
+still have an effect.
+This is the default on a dumb terminal, or when the output is not
+a terminal.
+.It Fl c Ar cache
+Store
+.Ar cache
+number of states for rate calculation.
+.It Fl d Ar count
+Update the display
+.Ar count
+times, then exit.
+For dumb terminals, the default is 1.
+.It Fl D
+This option is intended for debugging the filter. The filter code and
+resulting states are displayed in raw form. The binary state data is
+also dumped to a file named
+.Em state.dmp
+in the current directory.
+.It Fl f Ar filter
+This option specifies the filter that is applied to the states.
+The filter specification is based on the
+.Em tcpdump
+format. See the section on
+.Sx STATE FILTERING
+for details on the filter syntax.
+.It Fl i
+Use
+.Em interactive
+mode.
+In this mode, any input is immediately read for processing.
+See the section on
+.Sx INTERACTIVE MODE
+for an explanation of which keys perform what functions.
+After the command is processed, the screen will be updated immediately.
+This mode is the default when standard output is an intelligent
+terminal.
+.It Fl o Ar field
+Sort the process display area using the specified field as the
+primary key.
+Accepted field arguments are:
+.Ar age ,
+.Ar bytes ,
+.Ar dest ,
+.Ar dport ,
+.Ar exp ,
+.Ar none ,
+.Ar peak ,
+.Ar pkt ,
+.Ar rate ,
+.Ar size ,
+.Ar sport ,
+and
+.Ar src .
+.It Fl r
+Reverse the sort order.
+.It Fl s Ar time
+Set the delay between display updates to
+.Ar time
+seconds.
+The default delay is 5 seconds.
+.It Fl v Ar view
+Select the initial arrangement of the columns. Available
+views are:
+.Ar default ,
+.Ar long ,
+.Ar state ,
+.Ar time ,
+.Ar size ,
+.Ar rules ,
+.Ar label ,
+and
+.Ar speed .
+The
+.Ar rule
+and
+.Ar label
+views display rules, while the other views display states.
+.It Fl w Ar width
+Set the width of the display for batch mode.
+The default width is 80.
+.Sh INTERACTIVE MODE
+When
+.Nm
+is running in
+.Em interactive mode ,
+it reads commands from the terminal and acts upon them accordingly.
+In this mode, the terminal is put in
+.Dv CBREAK ,
+so that a character will be processed as soon as it is typed.
+The command will be processed and the display will be updated
+immediately thereafter (reflecting any changes that the command may
+have triggered).
+If a key is pressed while
+.Nm
+is in the middle of updating the display, it will finish the update
+and then process the command.
+These commands are currently recognized:
+.Bl -tag -width XxXXXX
+.It c
+Enable disable state caching (enabled by default). 
+.It f
+Set the state filter expression.
+.It h,?
+Display a summary of the commands (help screen).
+.It n
+Set number of lines to display.
+.It o
+Select next sorting Order.
+.It p
+Pause/resume display updates.
+.It q
+Quit
+.Nm pftop .
+.It r
+Reverse current sorting order.
+.It s
+Set display update interval in Seconds.
+.It v
+Select next View.
+.It 0-7
+Select one of the views directly.
+.It Cursor
+Scroll display (up/down), and switch views (left/right).
+Most of the emacs/mg motion keys work as well.
+.It SPACE
+Update display immediately.
+.It CTRL-L
+Refresh display.
+.It CTRL-G
+Clear command entry line.
+.El
+.Pp
+The following keys are shortcuts for sorting
+the display:
+.Bl -tag -width XxXXXX
+.It A
+Sort states by Age.
+.It B
+Sort states by number of Bytes.
+.It D
+Sort by Destination port.
+.It E
+Sort states by Expiry time.
+.It F
+Sort by source address (From).
+.It K
+Sort by peaK speed when caching is enabled.
+.It N
+No ordering.
+.It P
+Sort states by the number of Packets.
+.It R
+Sort by instantaneous speed (Rate) when caching is enabled.
+.It S
+Sort by Source port.
+.It T
+Sort by destination address (To).
+.El
+.Sh STATE FILTERING
+The expression
+.Ar filter
+selects which states will be displayed. It is based on
+the
+.Em tcpdump
+filtering language. The following is based on the
+.Em tcpdump
+manual page, modified for state filtering.
+.Pp
+The
+.Ar filter
+expression consists of one or more primitives.
+Primitives usually consist of an
+.Ar id
+.Pq name or number
+preceded by one or more qualifiers.
+There are three different kinds of qualifiers:
+.Bl -tag -width "proto"
+.It Ar type
+Specify which kind of address component the
+.Ar id
+name or number refers to.
+Possible types are
+.Cm host ,
+.Cm net
+and
+.Cm port .
+If there is no type qualifier,
+.Cm host
+is assumed.
+.It Ar dir
+Specify a the address component (src, dest, gateway) that
+.Ar id
+applies. Possible directions are
+.Cm src ,
+.Cm dst ,
+.Cm gw ,
+.Cm src or dst ,
+.Cm src and dst .
+If there is no
+.Ar dir
+qualifier,
+.Cm src or dst or gw
+is assumed.
+.It Ar proto
+Restrict the match to a particular protocol.
+Possible protocols are:
+.Cm ah ,
+.Cm carp ,
+.Cm esp ,
+.Cm icmp ,
+.Cm ip ,
+.Cm ip6 ,
+.Cm pfsync ,
+.Cm tcp ,
+and
+.Cm udp .
+If there is no protocol qualifier,
+all protocols consistent with the type are assumed.
+.El
+.Pp
+In addition to the above, there are some special primitive
+keywords that don't follow the pattern and arithmetic expressions.
+All of these are described below.
+.Pp
+More complex filter expressions are built up by using the words
+.Cm and ,
+.Cm or ,
+and
+.Cm not
+to combine primitives.
+.Pp
+Allowable primitives are:
+.Bl -tag -width "dst host host"
+.It Cm dst host Ar host
+True if the IP destination field of the state is
+.Ar host ,
+which may be either an address or a name.
+.It Cm gw host Ar host
+True if the IP gateway field of the state is
+.Ar host .
+.It Cm src host Ar host
+True if the IP source field of the state is
+.Ar host .
+.It Cm host Ar host
+True if either the IP source or destination or gateway of the
+state is
+.Ar host .
+If
+.Ar host
+is a name with multiple IP addresses, each address will be checked for a match.
+.It Cm dst net Ar net
+True if the IP destination address of the state has a network number of
+.Ar net .
+.Ar net
+may be either a name from
+.Pa /etc/networks
+or a network number (see
+.Xr networks 5
+for details).
+.It Cm gw net Ar net
+True if the IP gateway address of the state has a network number of
+.Ar net .
+.It Cm src net Ar net
+True if the IP source address of the state has a network number of
+.Ar net .
+.It Cm net Ar net
+True if either the IP source, destination or gateway address of
+the state has a network number of
+.Ar net .
+.Pp
+Any of the above
+.Ar host
+or
+.Ar net
+expressions can be prepended with the keywords,
+.Cm ip ,
+or
+.Cm ip6 .
+.It Cm dst port Ar port
+True if the packet is IP/TCP or IP/UDP and has a destination port value of
+.Ar port .
+The
+.Ar port
+can be a number or name from
+.Xr services 5
+(see
+.Xr tcp 4
+and
+.Xr udp 4 ) .
+If a name is used, both the port number and protocol are checked.
+If a number or ambiguous name is used, only the port number is checked;
+.It Cm port Ar port
+True if either the source, destination or gateway port of the state is
+.Ar port .
+.Pp
+Any of the above port expressions can be prepended with the keywords
+.Cm tcp
+or
+.Cm udp ,
+as in:
+.Pp
+.D1 Cm tcp src port Ar port
+.Pp
+which matches only TCP states whose source port is
+.Ar port .
+.It Xo
+.Cm inbound ,
+.Cm in
+.Xc
+True if the state has an inbound direction.
+.It Xo
+.Cm outbound ,
+.Cm out
+.Xc
+True if the state has an outbound direction.
+.It Cm proto Ar proto
+True if the IP protocol type of the state is
+.Ar proto .
+.Ar proto
+can be a number or name from
+.Xr protocols 5 ,
+such as
+.Cm icmp ,
+.Cm udp ,
+or
+.Cm tcp .
+.It Cm rnr Ar num
+True if the state was generated with the rule number
+in the main ruleset.
+.It Xo
+.Cm ah ,
+.Cm carp
+.Cm esp ,
+.Cm icmp ,
+.Cm pfsync ,
+.Cm tcp ,
+.Cm udp
+.Xc
+Abbreviations for:
+.Cm proto Ar p
+where
+.Ar p
+is one of the above protocols.
+.It Ar expr relop expr
+True if the relation holds, where
+.Ar relop
+is one of
+.Ql > ,
+.Ql < ,
+.Ql >= ,
+.Ql <= ,
+.Ql = ,
+.Ql != ,
+and
+.Ar expr
+is an arithmetic expression composed of integer constants
+.Pq expressed in standard C syntax ,
+the normal binary operators
+.Pf ( Ns Ql + ,
+.Ql - ,
+.Ql * ,
+.Ql / ,
+.Ql & ,
+.Ql | ) ,
+a length operator, and special state data accessors.
+.Pp
+The following expressions can be used to access numerical
+fields inside a state: 
+.Cm inp ,
+and
+.Cm outp 
+return input and output packet counts.
+.Cm inb ,
+and
+.Cm outb 
+is for input and output bytes transferred through the state.
+.Cm age
+is the seconds since the state is created, and
+.Cm exp
+is the number of seconds left before the state expires.
+.El
+.Pp
+Primitives may be combined using a parenthesized group of primitives and
+operators.
+Allowable primitives and operators are:
+.Bd -ragged -offset indent
+Negation
+.Po
+.Dq Cm \&!
+or
+.Dq Cm not
+.Pc
+
+Concatenation
+.Po
+.Dq Cm &&
+or
+.Dq Cm and
+.Pc
+
+Alternation
+.Po
+.Dq Cm ||
+or
+.Dq Cm or
+.Pc
+.Ed
+.Pp
+Negation has highest precedence.
+Alternation and concatenation have equal precedence and associate left to right.
+.Pp
+Expression arguments must be passed to
+.Nm
+as a single argument. Since the expression
+usually contains shell metacharacters,
+it should be placed in quotes.
+.Sh SEE ALSO
+.Xr pf 4 ,
+.Xr pfctl 8 ,
+.Xr tcpdump 8
+.Sh AUTHORS
+Can Erkin Acar
