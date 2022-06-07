@@ -1046,6 +1046,7 @@ cmd_keyboard(int ch)
 	case KEY_BACKSPACE:
 	case KEY_DC:
 	case CTRL_H:
+	case 0x7f:
 		if (cmd_len > 0) {
 			cmdbuf[--cmd_len] = 0;
 		} else
