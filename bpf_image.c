@@ -28,16 +28,14 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "pcap-int.h"
+#include <pcap/pcap.h>
 
 #ifdef HAVE_OS_PROTO_H
 #include "os-proto.h"
 #endif
 
 char *
-bpf_image(p, n)
-	struct bpf_insn *p;
-	int n;
+bpf_image(const struct bpf_insn *p, int n)
 {
 	int v;
 	char *fmt, *op;

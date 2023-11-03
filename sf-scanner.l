@@ -23,11 +23,6 @@
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
-#ifndef lint
-static const char rcsid[] =
-    "@(#) $Header: /var/cvsroot/pftop/sf-scanner.l,v 1.3 2007/10/01 20:39:40 canacar Exp $ (LBL)";
-#endif
-
 #include <sys/types.h>
 #include <sys/time.h>
 
@@ -36,7 +31,7 @@ static const char rcsid[] =
 #include <unistd.h>
 #include <vis.h>
 
-#include "pcap-int.h"
+#include <pcap/pcap.h>
 #include "sf-gencode.h"
 
 #include <netdb.h> 
@@ -222,7 +217,7 @@ rnr|rulenum	return RNR;
 			  if (getaddrinfo(yytext, NULL, &hints, &res))
 				sf_error("bogus IPv6 address %s", yytext);
 			  else {
-				yylval.e = sdup((char *)yytext); return HID6;
+				yylval.e = (unsigned char*) sdup((char *)yytext); return HID6;
 			  }
 			}
 [A-Za-z0-9][-_.A-Za-z0-9]*[.A-Za-z0-9] {
@@ -233,7 +228,7 @@ rnr|rulenum	return RNR;
 			size_t len = strlen(yytext) * 4 + 1;
 			char *v = malloc(len);
 			if (v != NULL)
-				strnvis(v, yytext, len, 0);
+				strvis(v, yytext, 0);
 			sf_error("illegal token: %s", v);
 			free(v);
 			}
@@ -245,8 +240,7 @@ rnr|rulenum	return RNR;
 			}
 %%
 void
-lex_init(buf)
-	char *buf;
+lex_init(char *buf)
 {
 	in_buffer = buf;
 	yyrestart(NULL);
@@ -264,8 +258,7 @@ yywrap()
 
 /* Hex digit to integer. */
 static inline int
-xdtoi(c)
-	register int c;
+xdtoi(register int c)
 {
 	if (isdigit(c))
 		return c - '0';
@@ -280,8 +273,7 @@ xdtoi(c)
  * preceding 0x or 0 and uses hex or octal instead of decimal.
  */
 static int
-stoi(s)
-	char *s;
+stoi(char *s)
 {
 	int base = 10;
 	int n = 0;

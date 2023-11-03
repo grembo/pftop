@@ -44,10 +44,12 @@
 #include <arpa/inet.h>
 
 #ifdef HAVE_ALTQ
-#include <altq/altq.h>
-#include <altq/altq_cbq.h>
-#include <altq/altq_priq.h>
-#include <altq/altq_hfsc.h>
+#include <net/altq/altq.h>
+#include <net/altq/altq_cbq.h>
+#include <net/altq/altq_priq.h>
+#include <net/altq/altq_hfsc.h>
+#include <net/altq/altq_fairq.h>
+#include <net/altq/altq_codel.h>
 #endif
 
 #include <ctype.h>
@@ -62,6 +64,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdarg.h>
+
+#include <libpfctl.h>
 
 #include "engine.h"
 #include "cache.h"
@@ -371,6 +375,8 @@ union class_stats {
 	class_stats_t		cbq_stats;
 	struct priq_classstats	priq_stats;
 	struct hfsc_classstats	hfsc_stats;
+	struct fairq_classstats	fairq_stats;
+	struct codel_ifstats	codel_stats;
 };
 
 struct queue_stats {
@@ -408,10 +414,10 @@ int
 sort_size_callback(const void *s1, const void *s2)
 {
 #ifdef HAVE_INOUT_COUNT
-	u_int64_t b1 = COUNTER(state_buf[* (u_int32_t *) s1].bytes[0]) + 
-		COUNTER(state_buf[* (u_int32_t *) s1].bytes[1]);
-	u_int64_t b2 = COUNTER(state_buf[* (u_int32_t *) s2].bytes[0]) + 
-		COUNTER(state_buf[* (u_int32_t *) s2].bytes[1]);
+	u_int64_t b1 = (state_buf[* (u_int32_t *) s1].bytes[0]) + 
+		(state_buf[* (u_int32_t *) s1].bytes[1]);
+	u_int64_t b2 = (state_buf[* (u_int32_t *) s2].bytes[0]) + 
+		(state_buf[* (u_int32_t *) s2].bytes[1]);
 #else
 	u_int64_t b1 = COUNTER(state_buf[* (u_int32_t *) s1].bytes);
 	u_int64_t b2 = COUNTER(state_buf[* (u_int32_t *) s2].bytes);
@@ -427,10 +433,10 @@ int
 sort_pkt_callback(const void *s1, const void *s2)
 {
 #ifdef HAVE_INOUT_COUNT
-	u_int64_t p1 = COUNTER(state_buf[* (u_int32_t *) s1].packets[0]) + 
-		COUNTER(state_buf[* (u_int32_t *) s1].packets[1]);
-	u_int64_t p2 = COUNTER(state_buf[* (u_int32_t *) s2].packets[0]) + 
-		COUNTER(state_buf[* (u_int32_t *) s2].packets[1]);
+	u_int64_t p1 = (state_buf[* (u_int32_t *) s1].packets[0]) + 
+		(state_buf[* (u_int32_t *) s1].packets[1]);
+	u_int64_t p2 = (state_buf[* (u_int32_t *) s2].packets[0]) + 
+		(state_buf[* (u_int32_t *) s2].packets[1]);
 #else
 	u_int64_t p1 = COUNTER(state_buf[* (u_int32_t *) s1].packets);
 	u_int64_t p2 = COUNTER(state_buf[* (u_int32_t *) s2].packets);
@@ -535,6 +541,115 @@ compare_addr(int af, const struct pf_addr *a, const struct pf_addr *b)
 	return 0;
 }
 
+#ifdef HAVE_PFSYNC_KEY
+
+#ifdef __GNUC__
+__inline__
+#endif
+int
+sort_addr_callback(const pf_state_t *s1,
+		   const pf_state_t *s2, int dir)
+{
+	const struct pf_addr *aa, *ab;
+	u_int16_t pa, pb;
+	int af, ret, ii, io;
+
+	af = s1->key[PF_SK_STACK].af;
+
+
+	if (af > s2->key[PF_SK_STACK].af)
+		return sortdir;
+	if (af < s2->key[PF_SK_STACK].af)
+		return -sortdir;
+	
+       	ii = io = 0;
+
+	if (dir == PF_OUT)	/* looking for source addr */
+		io = 1;
+	else			/* looking for dest addr */
+		ii = 1;
+	
+	if (s1->direction == PF_IN) {
+		aa = &s1->key[PF_SK_STACK].addr[ii];
+		pa =  s1->key[PF_SK_STACK].port[ii];
+	} else {
+		aa = &s1->key[PF_SK_WIRE].addr[io];
+		pa =  s1->key[PF_SK_WIRE].port[io];
+	}
+
+	if (s2->direction == PF_IN) {
+		ab = &s2->key[PF_SK_STACK].addr[ii];;
+		pb =  s2->key[PF_SK_STACK].port[ii];
+	} else {
+		ab = &s2->key[PF_SK_WIRE].addr[io];;
+		pb =  s2->key[PF_SK_WIRE].port[io];
+	}
+
+	ret = compare_addr(af, aa, ab);
+	if (ret)
+		return ret * sortdir;
+
+	if (ntohs(pa) > ntohs(pb))
+		return sortdir;
+	return -sortdir;
+}
+
+#ifdef __GNUC__
+__inline__
+#endif
+int
+sort_port_callback(const pf_state_t *s1,
+		   const pf_state_t *s2, int dir)
+{
+	const struct pf_addr *aa, *ab;
+	u_int16_t pa, pb;
+	int af, ret, ii, io;
+
+	af = s1->key[PF_SK_STACK].af;
+
+
+	if (af > s2->key[PF_SK_STACK].af)
+		return sortdir;
+	if (af < s2->key[PF_SK_STACK].af)
+		return -sortdir;
+	
+       	ii = io = 0;
+
+	if (dir == PF_OUT)	/* looking for source addr */
+		io = 1;
+	else			/* looking for dest addr */
+		ii = 1;
+	
+	if (s1->direction == PF_IN) {
+		aa = &s1->key[PF_SK_STACK].addr[ii];
+		pa =  s1->key[PF_SK_STACK].port[ii];
+	} else {
+		aa = &s1->key[PF_SK_WIRE].addr[io];
+		pa =  s1->key[PF_SK_WIRE].port[io];
+	}
+
+	if (s2->direction == PF_IN) {
+		ab = &s2->key[PF_SK_STACK].addr[ii];;
+		pb =  s2->key[PF_SK_STACK].port[ii];
+	} else {
+		ab = &s2->key[PF_SK_WIRE].addr[io];;
+		pb =  s2->key[PF_SK_WIRE].port[io];
+	}
+
+
+	if (ntohs(pa) > ntohs(pb))
+		return sortdir;
+	if (ntohs(pa) < ntohs(pb))
+		return - sortdir;
+
+	ret = compare_addr(af, aa, ab);
+	if (ret)
+		return ret * sortdir;
+	return -sortdir;
+}
+
+#else	/* HAVE_PFSYNC_KEY */
+
 #ifdef __GNUC__
 __inline__
 #endif
@@ -571,20 +686,6 @@ sort_addr_callback(const pf_state_t *s1,
 	if (ntohs(a->port) > ntohs(b->port))
 		return sortdir;
 	return -sortdir;
-}
-
-int sort_sa_callback(const void *p1, const void *p2)
-{
-	pf_state_t *s1 = state_buf + (* (u_int32_t *) p1);
-	pf_state_t *s2 = state_buf + (* (u_int32_t *) p2);
-	return sort_addr_callback(s1, s2, PF_OUT);
-}
-
-int sort_da_callback(const void *p1, const void *p2)
-{
-	pf_state_t *s1 = state_buf + (* (u_int32_t *) p1);
-	pf_state_t *s2 = state_buf + (* (u_int32_t *) p2);
-	return sort_addr_callback(s1, s2, PF_IN);
 }
 
 #ifdef __GNUC__
@@ -624,6 +725,21 @@ sort_port_callback(const pf_state_t *s1,
 	if (compare_addr(af, &a->addr, &b->addr) > 0)
 		return sortdir;
 	return -sortdir;
+}
+#endif	/* HAVE_PFSYNC_KEY */
+
+int sort_sa_callback(const void *p1, const void *p2)
+{
+	pf_state_t *s1 = state_buf + (* (u_int32_t *) p1);
+	pf_state_t *s2 = state_buf + (* (u_int32_t *) p2);
+	return sort_addr_callback(s1, s2, PF_OUT);
+}
+
+int sort_da_callback(const void *p1, const void *p2)
+{
+	pf_state_t *s1 = state_buf + (* (u_int32_t *) p1);
+	pf_state_t *s2 = state_buf + (* (u_int32_t *) p2);
+	return sort_addr_callback(s1, s2, PF_IN);
 }
 
 int
@@ -699,32 +815,35 @@ select_states(void)
 int
 read_states(void)
 {
-	struct pfioc_states ps;
+	struct pfctl_states ps = { };
+	pf_state_t *i, *d;
 	int n;
 
-	for (;;) {
-		int sbytes = state_buf_len * sizeof(pf_state_t);
-
-		ps.ps_len = sbytes;
-		ps.ps_buf = (char *) state_buf;
-
-		if (ioctl(pf_dev, DIOCGETSTATES, &ps) < 0) {
+	if (pfctl_get_states(pf_dev, &ps)) {
 			msgprintf("Error Reading States (DIOCGETSTATES): %s",
 				    strerror(errno));
 			return (-1);
-		}
-		num_states_all = ps.ps_len / sizeof(pf_state_t);
+	}
 
-		if (ps.ps_len < sbytes)
-			break;
+	n = 0;
+	TAILQ_FOREACH(i, &ps.states, entry) {
+		n++;
+	}
 
-		alloc_buf(num_states_all);
+	if ((state_buf_len * sizeof(pf_state_t)) < (sizeof(struct pfctl_state) * n))
+		alloc_buf(n);
+	num_states_all = n;
+
+	d = state_buf;
+	TAILQ_FOREACH(i, &ps.states, entry) {
+		memcpy(d, i, sizeof(*i));
+		d++;
 	}
 
 	if (dumpfilter) {
 		int fd = open("state.dmp", O_WRONLY|O_CREAT|O_EXCL, 0);
 		if (fd > 0) {
-			write(fd, state_buf, ps.ps_len);
+			write(fd, state_buf, num_states_all * sizeof(pf_state_t));
 			close(fd);
 		}
 	}
@@ -736,7 +855,7 @@ read_states(void)
 	} else {
 		num_states = 0;
 		for (n = 0; n<num_states_all; n++)
-			if (bpf_filter(filter_prog.bf_insns, (char *)(&state_buf[n]),
+			if (bpf_filter(filter_prog.bf_insns, (const unsigned char *)(&state_buf[n]),
 			    sizeof(pf_state_t), sizeof(pf_state_t)) > 0)
 				state_ord[num_states++] = n;
 	}
@@ -778,7 +897,7 @@ unmask(struct pf_addr * m, u_int8_t af)
 int
 print_header(void)
 {
-	struct pf_status status;
+	struct pfctl_status *status;
 	struct tm *tp;
 	time_t t;
 	order_type *ordering;
@@ -786,7 +905,7 @@ print_header(void)
 	int start = dispstart + 1;
 	int end = dispstart + maxprint;
 
-	if (ioctl(pf_dev, DIOCGETSTATUS, &status)) {
+	if ((status = pfctl_get_status(pf_dev)) == NULL) {
 		msgprintf("Error Reading status (DIOCGETSTATUS): %s", strerror(errno));
 		return (-1);
 	}
@@ -797,7 +916,7 @@ print_header(void)
 	tb_start();
 	tbprintf("pfTop: ");
 
-	tbprintf(status.running ? "Up" : "Down");
+	tbprintf(status->running ? "Up" : "Down");
 
 	tbprintf(" %s", curr_mgr ? curr_mgr->name : "???");
 
@@ -848,6 +967,8 @@ print_header(void)
 
 	tb_end();
 
+	pfctl_free_status(status);
+
 	return (1);
 }
 
@@ -865,7 +986,48 @@ tb_print_addr(struct pf_addr * addr, struct pf_addr * mask, int af)
 			tbprintf("/%u", unmask(mask, af));
 	}
 }
+#ifdef HAVE_PFSYNC_KEY
+void
+print_fld_host2(field_def *fld, struct pfctl_state_key *ks,
+		struct pfctl_state_key *kn, int idx, int af)
+{
+	struct pf_addr *as = &ks->addr[idx];
+	struct pf_addr *an = &kn->addr[idx];
 
+	u_int16_t ps = ntohs(ks->port[idx]);
+	u_int16_t pn = ntohs(kn->port[idx]);
+
+	if (fld == NULL)
+		return;
+
+	if (fld->width < 3) {
+		print_fld_str(fld, "*");
+		return;
+	}
+
+	tb_start();
+	tb_print_addr(as, NULL, af);
+
+	if (af == AF_INET)
+		tbprintf(":%u", ps);
+	else
+		tbprintf("[%u]", ps);
+
+	print_fld_tb(fld);
+
+	if (PF_ANEQ(as, an, af) || ps != pn) {
+		tb_start();
+		tb_print_addr(an, NULL, af);
+
+		if (af == AF_INET)
+			tbprintf(":%u", pn);
+		else
+			tbprintf("[%u]", pn);
+		print_fld_tb(FLD_GW);
+	}
+
+}
+#else
 void
 print_fld_host(field_def *fld, pf_state_host_t * h, int af)
 {
@@ -889,6 +1051,7 @@ print_fld_host(field_def *fld, pf_state_host_t * h, int af)
 
 	print_fld_tb(fld);
 }
+#endif
 
 void
 print_fld_state(field_def *fld, unsigned int proto,
@@ -953,32 +1116,46 @@ print_state(pf_state_t * s, struct sc_ent * ent)
 		dst = &s->src;
 	}
 
-	p = getprotobynumber(s->proto);
+	p = getprotobynumber(s->key[PF_SK_WIRE].proto);
 
 	if (p != NULL)
 		print_fld_str(FLD_PROTO, p->p_name);
 	else
-		print_fld_uint(FLD_PROTO, s->proto);
+		print_fld_uint(FLD_PROTO, s->key[PF_SK_WIRE].proto);
 
+#ifdef HAVE_PFSYNC_KEY
 	if (s->direction == PF_OUT) {
-		print_fld_host(FLD_SRC, &s->lan, s->af);
-		print_fld_host(FLD_DEST, &s->ext, s->af);
+		print_fld_host2(FLD_SRC, &s->key[PF_SK_WIRE],
+		    &s->key[PF_SK_STACK], 1, s->key[PF_SK_WIRE].af);
+		print_fld_host2(FLD_DEST, &s->key[PF_SK_WIRE],
+		    &s->key[PF_SK_STACK], 0, s->key[PF_SK_WIRE].af);
 	} else {
-		print_fld_host(FLD_SRC, &s->ext, s->af);
-		print_fld_host(FLD_DEST, &s->lan, s->af);
+		print_fld_host2(FLD_SRC, &s->key[PF_SK_STACK],
+		    &s->key[PF_SK_WIRE], 0, s->key[PF_SK_STACK].af);
+		print_fld_host2(FLD_DEST, &s->key[PF_SK_STACK],
+		    &s->key[PF_SK_WIRE], 1, s->key[PF_SK_STACK].af);
+	}
+#else
+	if (s->direction == PF_OUT) {
+		print_fld_host(FLD_SRC, &s->lan, s->key[PF_SK_WIRE].af);
+		print_fld_host(FLD_DEST, &s->ext, s->key[PF_SK_WIRE].af);
+	} else {
+		print_fld_host(FLD_SRC, &s->ext, s->key[PF_SK_WIRE].af);
+		print_fld_host(FLD_DEST, &s->lan, s->key[PF_SK_WIRE].af);
 	}
 
-	if (PF_ANEQ(&s->lan.addr, &s->gwy.addr, s->af) ||
+	if (PF_ANEQ(&s->lan.addr, &s->gwy.addr, s->key[PF_SK_WIRE].af) ||
 	    (s->lan.port != s->gwy.port)) {
-		print_fld_host(FLD_GW, &s->gwy, s->af);
+		print_fld_host(FLD_GW, &s->gwy, s->key[PF_SK_WIRE].af);
 	}
+#endif
 
 	if (s->direction == PF_OUT)
 		print_fld_str(FLD_DIR, "Out");
 	else
 		print_fld_str(FLD_DIR, "In");
 
-	print_fld_state(FLD_STATE, s->proto, src->state, dst->state);
+	print_fld_state(FLD_STATE, s->key[PF_SK_WIRE].proto, src->state, dst->state);
 	print_fld_age(FLD_AGE, s->creation);
 	print_fld_age(FLD_EXP, s->expire);
 #ifdef HAVE_INOUT_COUNT
@@ -988,18 +1165,18 @@ print_state(pf_state_t * s, struct sc_ent * ent)
 		print_fld_size(FLD_PKTS, COUNTER(s->packets[0]) +
 			       COUNTER(s->packets[1]));
 		print_fld_size(FLD_BYTES, sz);
-		print_fld_rate(FLD_SA, (s->creation > 0) ?
-			       ((double)sz/(double)s->creation) : -1);
+		print_fld_rate(FLD_SA, (s->creation) ?
+			       ((double)sz/s->creation) : -1);
 	}
 #else
 	print_fld_size(FLD_PKTS, s->packets);
 	print_fld_size(FLD_BYTES, s->bytes);
-	print_fld_rate(FLD_SA, (s->creation > 0) ?
-		       ((double)s->bytes/(double)s->creation) : -1);
+	print_fld_rate(FLD_SA, (s->creation) ?
+		       ((double)s->bytes/s->creation) : -1);
 
 #endif
 #ifdef HAVE_PFSYNC_STATE
-	print_fld_uint(FLD_RULE, s->rule);
+	print_fld_uint(FLD_RULE, ntohl(s->rule));
 #else
 #ifdef HAVE_RULE_NUMBER
 	print_fld_uint(FLD_RULE, s->rule.nr);
@@ -1029,7 +1206,7 @@ print_states(void)
 
 /* rule display */
 
-struct pf_rule *rules = NULL;
+struct pfctl_rule *rules = NULL;
 u_int32_t alloc_rules = 0;
 
 int
@@ -1069,6 +1246,7 @@ int
 read_anchor_rules(char *anchor)
 {
 	struct pfioc_rule pr;
+	struct pfctl_rule rule;
 	u_int32_t nr, num, off;
 
 	memset(&pr, 0, sizeof(pr));
@@ -1086,8 +1264,7 @@ read_anchor_rules(char *anchor)
 	add_rule_alloc(num);
 
 	for (nr = 0; nr < num; ++nr) {
-		pr.nr = nr;
-		if (ioctl(pf_dev, DIOCGETRULE, &pr)) {
+		if (pfctl_get_rule(pf_dev, nr, pr.ticket, anchor, pr.action, &rule, pr.anchor_call)) {
 			msgprintf("Error Reading Rule (DIOCGETRULE): %s",
 				  strerror(errno));
 			return (-1);
@@ -1095,7 +1272,7 @@ read_anchor_rules(char *anchor)
 #ifdef HAVE_RULESETS
 		/* XXX overload pr.anchor, to store a pointer to
 		 * anchor name */
-		pr.rule.anchor = (struct pf_anchor *) anchor;
+		rule.anchor = (struct pfctl_anchor *) anchor;
 #endif
 #ifdef HAVE_RULE_LABELS
 		{
@@ -1104,7 +1281,7 @@ read_anchor_rules(char *anchor)
 				label_length = len;
 		}
 #endif
-		rules[off + nr] = pr.rule;
+		rules[off + nr] = rule;
 	}
 
 	return (num);
@@ -1456,7 +1633,7 @@ tb_print_flags(u_int8_t f)
 }
 
 void
-print_rule(struct pf_rule *pr)
+print_rule(struct pfctl_rule *pr)
 {
 	static const char *actiontypes[] = { "Pass", "Block", "Scrub", "Nat",
 	    "no Nat", "Binat", "no Binat", "Rdr", "no Rdr" };
@@ -1472,10 +1649,14 @@ print_rule(struct pf_rule *pr)
 	if (pr == NULL) return;
 
 #ifdef HAVE_RULE_LABELS
-	print_fld_str(FLD_LABEL, pr->label);
+	print_fld_str(FLD_LABEL, pr->label[0]);
 #endif
 #ifdef HAVE_RULE_STATES
+#ifdef HAVE_PFSYNC_KEY
+	print_fld_size(FLD_STATS, pr->states_tot);
+#else
 	print_fld_size(FLD_STATS, pr->states);
+#endif
 #endif
 
 #ifdef HAVE_INOUT_COUNT_RULES
@@ -1486,7 +1667,13 @@ print_rule(struct pf_rule *pr)
 	print_fld_size(FLD_BYTES, pr->bytes);
 #endif
 	print_fld_uint(FLD_RULE, pr->nr);
-	print_fld_str(FLD_DIR, pr->direction == PF_OUT ? "Out" : "In");
+	if (pr->direction == PF_IN)
+		print_fld_str(FLD_DIR, "In");
+	else if (pr->direction == PF_OUT)
+		print_fld_str(FLD_DIR, "Out");
+	else
+		print_fld_str(FLD_DIR, "Any");
+
 	if (pr->quick)
 		print_fld_str(FLD_QUICK, "Quick");
 
@@ -1570,10 +1757,10 @@ print_rule(struct pf_rule *pr)
 #ifdef HAVE_RULE_UGID
 	if (pr->uid.op)
 		tb_print_ugid(pr->uid.op, pr->uid.uid[0], pr->uid.uid[1],
-		        "user", UID_MAX);
+		        "user", UINT_MAX);
 	if (pr->gid.op)
 		tb_print_ugid(pr->gid.op, pr->gid.gid[0], pr->gid.gid[1],
-		        "group", GID_MAX);
+		        "group", UINT_MAX);
 #endif
 
 	if (pr->flags || pr->flagset) {
@@ -1729,12 +1916,19 @@ pfctl_insert_altq_node(struct pf_altq_node **root,
 			prev->next = node;
 		}
 	}
-	if (*root != node) {
-		struct pf_altq_node	*prev_flat = *root;
-		while (prev_flat->next_flat != NULL) {
-			prev_flat = prev_flat->next_flat;
-		}
-		prev_flat->next_flat = node;
+}
+
+void
+pfctl_set_next_flat(struct pf_altq_node *node, struct pf_altq_node *up)
+{
+	while (node) {
+		struct pf_altq_node *next = node->next ? node->next : up;
+		if (node->children) {
+			node->next_flat = node->children;
+			pfctl_set_next_flat(node->children, next);
+		} else
+			node->next_flat = next;
+		node = node->next;
 	}
 }
 
@@ -1747,6 +1941,7 @@ pfctl_update_qstats(struct pf_altq_node **root, int *inserts)
 	u_int32_t		 nr;
 	struct queue_stats	 qstats;
 	u_int32_t		 nr_queues;
+	int			 ret = 0;
 
 	*inserts = 0;
 	memset(&pa, 0, sizeof(pa));
@@ -1757,15 +1952,24 @@ pfctl_update_qstats(struct pf_altq_node **root, int *inserts)
 			  strerror(errno));
 		return (-1);
 	}
+
 	num_queues = nr_queues = pa.nr;
+	if (pa.altq.scheduler == ALTQT_CODEL)
+		num_queues = 1;
 	for (nr = 0; nr < nr_queues; ++nr) {
 		pa.nr = nr;
 		if (ioctl(pf_dev, DIOCGETALTQ, &pa)) {
 			msgprintf("Error Reading Queue (DIOCGETALTQ): %s",
 				  strerror(errno));
-			return (-1);
+			ret = -1;
+			break;
 		}
-		if (pa.altq.qid > 0) {
+#ifdef PFALTQ_FLAG_IF_REMOVED
+		if ((pa.altq.qid > 0 || pa.altq.scheduler == ALTQT_CODEL) &&
+		    !(pa.altq.local_flags & PFALTQ_FLAG_IF_REMOVED)) {
+#else
+		if (pa.altq.qid > 0  || pa.altq.scheduler == ALTQT_CODEL) {
+#endif
 			pq.nr = nr;
 			pq.ticket = pa.ticket;
 			pq.buf = &qstats;
@@ -1773,7 +1977,8 @@ pfctl_update_qstats(struct pf_altq_node **root, int *inserts)
 			if (ioctl(pf_dev, DIOCGETQSTATS, &pq)) {
 				msgprintf("Error Reading Queue (DIOCGETQSTATS): %s",
 					  strerror(errno));
-				return (-1);
+				ret = -1;
+				break;
 			}
 			qstats.valid = 1;
 			gettimeofday(&qstats.timestamp, NULL);
@@ -1794,7 +1999,10 @@ pfctl_update_qstats(struct pf_altq_node **root, int *inserts)
 		else
 			--num_queues;
 	}
-	return (0);
+
+	pfctl_set_next_flat(*root, NULL);
+
+	return (ret);
 }
 
 void
@@ -1917,11 +2125,14 @@ print_queue(struct pf_altq_node *node)
 	tb_start();
 	for (d = 0; d < node->depth; d++)
 		tbprintf(" ");
-	tbprintf(node->altq.qname);
+	if (node->altq.qname[0] != '\0')
+		tbprintf(node->altq.qname);
+	else
+		tbprintf("root");
 	print_fld_tb(FLD_QUEUE);
 
 	if (node->altq.scheduler == ALTQT_CBQ ||
-	    node->altq.scheduler == ALTQT_HFSC
+	    node->altq.scheduler == ALTQT_HFSC || node->altq.scheduler == ALTQT_FAIRQ || node->altq.scheduler == ALTQT_CODEL
 		)
 		print_fld_bw(FLD_BANDW, (double)node->altq.bandwidth);
 	
@@ -1992,6 +2203,42 @@ print_queue(struct pf_altq_node *node)
 					node->qstats_last.data.hfsc_stats.xmit_cnt.bytes, interval);
 		}
 		break;
+       case ALTQT_FAIRQ:
+               print_fld_str(FLD_SCHED, "fairq");
+               print_fld_size(FLD_PKTS,
+                               node->qstats.data.fairq_stats.xmit_cnt.packets);
+               print_fld_size(FLD_BYTES,
+                               node->qstats.data.fairq_stats.xmit_cnt.bytes);
+               print_fld_size(FLD_DROPP,
+                               node->qstats.data.fairq_stats.drop_cnt.packets);
+               print_fld_size(FLD_DROPB,
+                               node->qstats.data.fairq_stats.drop_cnt.bytes);
+               print_fld_size(FLD_QLEN, node->qstats.data.fairq_stats.qlength);
+               if (interval > 0) {
+                       pps = calc_pps(node->qstats.data.fairq_stats.xmit_cnt.packets,
+                                       node->qstats_last.data.fairq_stats.xmit_cnt.packets, interval);
+                       bps = calc_rate(node->qstats.data.fairq_stats.xmit_cnt.bytes,
+                                       node->qstats_last.data.fairq_stats.xmit_cnt.bytes, interval);
+               }
+               break;
+       case ALTQT_CODEL:
+               print_fld_str(FLD_SCHED, "codel");
+               print_fld_size(FLD_PKTS,
+                               node->qstats.data.codel_stats.cl_xmitcnt.packets);
+               print_fld_size(FLD_BYTES,
+                               node->qstats.data.codel_stats.cl_xmitcnt.bytes);
+               print_fld_size(FLD_DROPP,
+                               node->qstats.data.codel_stats.cl_dropcnt.packets);
+               print_fld_size(FLD_DROPB,
+                               node->qstats.data.codel_stats.cl_dropcnt.bytes);
+               print_fld_size(FLD_QLEN, node->qstats.data.codel_stats.qlength);
+               if (interval > 0) {
+                       pps = calc_pps(node->qstats.data.codel_stats.cl_xmitcnt.packets,
+                                       node->qstats_last.data.codel_stats.cl_xmitcnt.packets, interval);
+                       bps = calc_rate(node->qstats.data.codel_stats.cl_xmitcnt.bytes,
+                                       node->qstats_last.data.codel_stats.cl_xmitcnt.bytes, interval);
+               }
+               break;
 	}
 
 	/* if (node->altq.scheduler != ALTQT_HFSC && interval > 0) { */
@@ -2207,7 +2454,7 @@ main(int argc, char *argv[])
 	extern char *optarg;
 	extern int optind;
 
-	struct pf_status status;
+	struct pfctl_status *status = NULL;
 
 	char *orderstr = NULL;
 	char *viewstr = NULL;
@@ -2322,11 +2569,15 @@ main(int argc, char *argv[])
 		err(1, "open(\"/dev/pf\")");
 
 	/* preallocate existing states if possible */
-	if (ioctl(pf_dev, DIOCGETSTATUS, &status)) {
+	if ((status = pfctl_get_status(pf_dev)) == NULL) {
 		warn("DIOCGETSTATUS");
 		alloc_buf(0);
-	} else
-		alloc_buf(status.states);
+	} else {
+		alloc_buf(status->states);
+		pfctl_free_status(status);
+		status = NULL;
+	}
+
 
 	setup_term(maxstates);
 

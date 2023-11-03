@@ -32,7 +32,7 @@
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
 
-#include <net/if_pflog.h>
+
 #include <net/pfvar.h>
 
 #include <netdb.h>
@@ -44,9 +44,10 @@
 
 #define INET6
 
-#include <pcap-int.h>
+#include <pcap/pcap.h>
 #include <pcap-namedb.h>
 #include "sf-gencode.h"
+#include "pcap-nametoaddr.h"
 
 #include "config.h"
 
@@ -60,7 +61,7 @@ static jmp_buf top_ctx;
 static char sf_errbuf[PFTOP_ERRBUF_SIZE];
 
 /* VARARGS */
-__dead void
+__dead2 void
 sf_error(const char *fmt, ...)
 {
 	va_list ap;
@@ -113,9 +114,6 @@ static struct block *gen_mcmp(u_int, u_int, bpf_int32, bpf_u_int32);
 #ifdef HAVE_STATE_IFNAME
 static struct block *gen_bcmp(u_int, u_int, const u_char *);
 #endif
-static struct block *gen_uncond(int);
-static __inline struct block *gen_true(void);
-static __inline struct block *gen_false(void);
 static __inline struct block *gen_proto(int);
 static struct block *gen_linktype(int);
 static struct block *gen_hostop(bpf_u_int32, bpf_u_int32, int);
@@ -429,51 +427,123 @@ gen_bcmp(u_int offset, u_int size, const u_char *v)
 #endif
 
 static struct block *
-gen_uncond(int rsense)
-{
-	struct block *b;
-	struct slist *s;
-
-	s = new_stmt(BPF_LD|BPF_IMM);
-	s->s.k = !rsense;
-	b = new_block(JMP(BPF_JEQ));
-	b->stmts = s;
-
-	return b;
-}
-
-static __inline struct block *
-gen_true(void)
-{
-	return gen_uncond(1);
-}
-
-static __inline struct block *
-gen_false(void)
-{
-	return gen_uncond(0);
-}
-
-static struct block *
 gen_linktype(int proto)
 {
 	if (proto == ETHERTYPE_IP)
-		return (gen_cmp(offsetof(pf_state_t, af), BPF_B,
+		return (gen_cmp(offsetof(pf_state_t, key[PF_SK_WIRE].af), BPF_B,
 				(bpf_int32)AF_INET));
 	if (proto == ETHERTYPE_IPV6)
-		return (gen_cmp(offsetof(pf_state_t, af), BPF_B,
+		return (gen_cmp(offsetof(pf_state_t, key[PF_SK_WIRE].af), BPF_B,
 				(bpf_int32)AF_INET6));
 	/* XXX just return false? */
-	return gen_cmp(offsetof(pf_state_t, af), BPF_B, (bpf_int32)proto);
+	return gen_cmp(offsetof(pf_state_t, key[PF_SK_WIRE].af), BPF_B, (bpf_int32)proto);
 }
 
 static __inline struct block *
 gen_proto(int proto)
 {
-	return (gen_cmp(offsetof(pf_state_t, proto), BPF_B,
+	return (gen_cmp(offsetof(pf_state_t, key[PF_SK_WIRE].proto), BPF_B,
 			(bpf_int32)proto));
 }
 
+#ifdef HAVE_PFSYNC_KEY
+static struct block *
+gen_hostop(bpf_u_int32 addr, bpf_u_int32 mask, int dir)
+{
+	struct block *b0, *b1, *b2, *bi, *bo;
+	const static int isrc_off = offsetof(pf_state_t, key[PF_SK_STACK].addr[0].v4);
+	const static int osrc_off = offsetof(pf_state_t, key[PF_SK_WIRE].addr[1].v4);
+	const static int idst_off = offsetof(pf_state_t, key[PF_SK_STACK].addr[1].v4);
+	const static int odst_off = offsetof(pf_state_t, key[PF_SK_WIRE].addr[0].v4);
+
+	const static int igwy1_off = offsetof(pf_state_t, key[PF_SK_WIRE].addr[0].v4);
+	const static int ogwy1_off = offsetof(pf_state_t, key[PF_SK_STACK].addr[1].v4);
+	const static int igwy2_off = offsetof(pf_state_t, key[PF_SK_WIRE].addr[1].v4);
+	const static int ogwy2_off = offsetof(pf_state_t, key[PF_SK_STACK].addr[0].v4);
+
+	addr = ntohl(addr);
+	mask = ntohl(mask);
+
+	bi = gen_cmp(offsetof(pf_state_t, direction), BPF_B, (bpf_int32)PF_IN);
+	bo = gen_cmp(offsetof(pf_state_t, direction), BPF_B, (bpf_int32)PF_OUT);
+
+	switch (dir) {
+
+	case Q_SRC:
+		b1 = gen_mcmp(osrc_off, BPF_W, addr, mask);
+		gen_and(bo, b1);
+		b0 = gen_mcmp(isrc_off, BPF_W, addr, mask);
+		gen_and(bi, b0);
+		gen_or(b0, b1);
+		break;
+
+	case Q_DST:
+		b1 = gen_mcmp(odst_off, BPF_W, addr, mask);
+		gen_and(bo, b1);
+		b0 = gen_mcmp(idst_off, BPF_W, addr, mask);
+		gen_and(bi, b0);
+		gen_or(b0, b1);
+		break;
+
+	case Q_GATEWAY:
+		/* (in && (addr == igwy1 || addr == igwy2)) ||
+		   (out && (addr == ogwy1 || addr == ogwy2))  phew! */
+		b1 = gen_mcmp(igwy1_off, BPF_W, addr, mask);
+		b0 = gen_mcmp(igwy2_off, BPF_W, addr, mask);
+		gen_or(b0, b1);
+		gen_and(bi, b1);
+		b2 = gen_mcmp(ogwy1_off, BPF_W, addr, mask);
+		b0 = gen_mcmp(ogwy2_off, BPF_W, addr, mask);
+		gen_or(b2, b0);
+		gen_and(bo, b0);
+		gen_or(b0, b1);
+		break;
+
+	case Q_AND:
+		b1 = gen_mcmp(isrc_off, BPF_W, addr, mask);
+		b0 = gen_mcmp(idst_off, BPF_W, addr, mask);
+		gen_and(b0, b1);
+		gen_and(bi, b1);
+		b2 = gen_mcmp(osrc_off, BPF_W, addr, mask);
+		b0 = gen_mcmp(odst_off, BPF_W, addr, mask);
+		gen_and(b2, b0);
+		gen_and(bo, b0);
+		gen_or(b0, b1);
+		break;
+
+	case Q_OR:
+		b1 = gen_mcmp(isrc_off, BPF_W, addr, mask);
+		b0 = gen_mcmp(idst_off, BPF_W, addr, mask);
+		gen_or(b0, b1);
+		gen_and(bi, b1);
+		b2 = gen_mcmp(osrc_off, BPF_W, addr, mask);
+		b0 = gen_mcmp(odst_off, BPF_W, addr, mask);
+		gen_or(b2, b0);
+		gen_and(bo, b0);
+		gen_or(b0, b1);
+		break;
+
+	case Q_DEFAULT:
+		b1 = gen_mcmp(isrc_off, BPF_W, addr, mask);
+		b0 = gen_mcmp(idst_off, BPF_W, addr, mask);
+		gen_or(b0, b1);
+		b0 = gen_mcmp(osrc_off, BPF_W, addr, mask);
+		gen_or(b0, b1);
+		b0 = gen_mcmp(odst_off, BPF_W, addr, mask);
+		gen_or(b0, b1);
+		break;
+
+	default:
+		sf_error("Internal error: Invalid direcion specifier: %d", dir);
+	}
+
+	b0 = gen_linktype(ETHERTYPE_IP);
+	gen_and(b0, b1);
+
+	return b1;
+}
+
+#else
 static struct block *
 gen_hostop(bpf_u_int32 addr, bpf_u_int32 mask, int dir)
 {
@@ -542,6 +612,7 @@ gen_hostop(bpf_u_int32 addr, bpf_u_int32 mask, int dir)
 
 	return b1;
 }
+#endif
 
 static struct block *
 gen_hostcmp6(u_int off, u_int32_t *a, u_int32_t *m)
@@ -560,6 +631,105 @@ gen_hostcmp6(u_int off, u_int32_t *a, u_int32_t *m)
 	return b1;
 }
 
+#ifdef HAVE_PFSYNC_KEY
+static struct block *
+gen_hostop6(struct in6_addr *addr, struct in6_addr *mask, int dir)
+
+{
+	struct block *b0, *b1, *b2, *bi, *bo;
+	u_int32_t *a, *m;
+	const static int isrc_off = offsetof(pf_state_t, key[PF_SK_STACK].addr[0].v6);
+	const static int osrc_off = offsetof(pf_state_t, key[PF_SK_WIRE].addr[1].v6);
+	const static int idst_off = offsetof(pf_state_t, key[PF_SK_STACK].addr[1].v6);
+	const static int odst_off = offsetof(pf_state_t, key[PF_SK_WIRE].addr[0].v6);
+
+	const static int igwy1_off = offsetof(pf_state_t, key[PF_SK_WIRE].addr[0].v6);
+	const static int ogwy1_off = offsetof(pf_state_t, key[PF_SK_STACK].addr[1].v6);
+	const static int igwy2_off = offsetof(pf_state_t, key[PF_SK_WIRE].addr[1].v6);
+	const static int ogwy2_off = offsetof(pf_state_t, key[PF_SK_STACK].addr[0].v6);
+
+	a = (u_int32_t *)addr;
+	m = (u_int32_t *)mask;
+
+	bi = gen_cmp(offsetof(pf_state_t, direction), BPF_B, (bpf_int32)PF_IN);
+	bo = gen_cmp(offsetof(pf_state_t, direction), BPF_B, (bpf_int32)PF_OUT);
+
+	switch (dir) {
+
+	case Q_SRC:
+		b1 = gen_hostcmp6(osrc_off, a, m);
+		gen_and(bo, b1);
+		b0 = gen_hostcmp6(isrc_off, a, m);
+		gen_and(bi, b0);
+		gen_or(b0, b1);
+		break;
+
+	case Q_DST:
+		b1 = gen_hostcmp6(odst_off, a, m);
+		gen_and(bo, b1);
+		b0 = gen_hostcmp6(idst_off, a, m);
+		gen_and(bi, b0);
+		gen_or(b0, b1);
+		break;
+
+	case Q_GATEWAY:
+		/* (in && (addr == igwy1 || addr == igwy2)) ||
+		   (out && (addr == ogwy1 || addr == ogwy2))  phew! */
+		b1 = gen_hostcmp6(igwy1_off, a, m);
+		b0 = gen_hostcmp6(igwy2_off, a, m);
+		gen_or(b0, b1);
+		gen_and(bi, b1);
+		b2 = gen_hostcmp6(ogwy1_off, a, m);
+		b0 = gen_hostcmp6(ogwy2_off, a, m);
+		gen_or(b2, b0);
+		gen_and(bo, b0);
+		gen_or(b0, b1);
+		break;
+
+	case Q_AND:
+		b1 = gen_hostcmp6(isrc_off, a, m);
+		b0 = gen_hostcmp6(idst_off, a, m);
+		gen_and(b0, b1);
+		gen_and(bi, b1);
+		b2 = gen_hostcmp6(osrc_off, a, m);
+		b0 = gen_hostcmp6(odst_off, a, m);
+		gen_and(b2, b0);
+		gen_and(bo, b0);
+		gen_or(b0, b1);
+		break;
+
+	case Q_OR:
+		b1 = gen_hostcmp6(isrc_off, a, m);
+		b0 = gen_hostcmp6(idst_off, a, m);
+		gen_or(b0, b1);
+		gen_and(bi, b1);
+		b2 = gen_hostcmp6(osrc_off, a, m);
+		b0 = gen_hostcmp6(odst_off, a, m);
+		gen_or(b2, b0);
+		gen_and(bo, b0);
+		gen_or(b0, b1);
+		break;
+
+	case Q_DEFAULT:
+		b1 = gen_hostcmp6(isrc_off, a, m);
+		b0 = gen_hostcmp6(idst_off, a, m);
+		gen_or(b0, b1);
+		b0 = gen_hostcmp6(osrc_off, a, m);
+		gen_or(b0, b1);
+		b0 = gen_hostcmp6(odst_off, a, m);
+		gen_or(b0, b1);
+		break;
+
+	default:
+		sf_error("Internal error: Invalid direcion specifier: %d", dir);
+	}
+
+	b0 = gen_linktype(ETHERTYPE_IPV6);
+	gen_and(b0, b1);
+
+	return b1;
+}
+#else
 static struct block *
 gen_hostop6(struct in6_addr *addr, struct in6_addr *mask, int dir)
 {
@@ -630,6 +800,7 @@ gen_hostop6(struct in6_addr *addr, struct in6_addr *mask, int dir)
 	gen_and(b0, b1);
 	return b1;
 }
+#endif
 
 static const char *
 get_modifier_by_id(int id)
@@ -662,11 +833,7 @@ get_modifier_by_id(int id)
 }
 
 static struct block *
-gen_host(addr, mask, proto, dir)
-	bpf_u_int32 addr;
-	bpf_u_int32 mask;
-	int proto;
-	int dir;
+gen_host(bpf_u_int32 addr, bpf_u_int32 mask, int proto, int dir)
 {
 	switch (proto) {
 	case Q_DEFAULT:
@@ -696,8 +863,7 @@ gen_host6(struct in6_addr *addr, struct in6_addr *mask, int proto, int dir)
 }
 
 struct block *
-gen_proto_abbrev(proto)
-	int proto;
+gen_proto_abbrev(int proto)
 {
 	struct block *b0 = NULL, *b1;
 
@@ -748,6 +914,104 @@ gen_proto_abbrev(proto)
 	return b1;
 }
 
+#ifdef HAVE_PFSYNC_KEY
+struct block *
+gen_portop(int port, int proto, int dir)
+{
+	struct block *b0, *b1, *b2, *bi, *bo;
+	const static int isrc_off = offsetof(pf_state_t, key[PF_SK_STACK].port[0]);
+	const static int osrc_off = offsetof(pf_state_t, key[PF_SK_WIRE].port[1]);
+	const static int idst_off = offsetof(pf_state_t, key[PF_SK_STACK].port[1]);
+	const static int odst_off = offsetof(pf_state_t, key[PF_SK_WIRE].port[0]);
+
+	const static int igwy1_off = offsetof(pf_state_t, key[PF_SK_WIRE].port[0]);
+	const static int ogwy1_off = offsetof(pf_state_t, key[PF_SK_STACK].port[1]);
+	const static int igwy2_off = offsetof(pf_state_t, key[PF_SK_WIRE].port[1]);
+	const static int ogwy2_off = offsetof(pf_state_t, key[PF_SK_STACK].port[0]);
+
+	port = ntohs(port);
+
+	bi = gen_cmp(offsetof(pf_state_t, direction), BPF_B, (bpf_int32)PF_IN);
+	bo = gen_cmp(offsetof(pf_state_t, direction), BPF_B, (bpf_int32)PF_OUT);
+
+	switch (dir) {
+
+	case Q_SRC:
+		b1 = gen_cmp(osrc_off, BPF_H, (bpf_int32)port);
+		gen_and(bo, b1);
+		b0 = gen_cmp(isrc_off, BPF_H, (bpf_int32)port);
+		gen_and(bi, b0);
+		gen_or(b0, b1);
+		break;
+
+	case Q_DST:
+		b1 = gen_cmp(odst_off, BPF_H, (bpf_int32)port);
+		gen_and(bo, b1);
+		b0 = gen_cmp(idst_off, BPF_H, (bpf_int32)port);
+		gen_and(bi, b0);
+		gen_or(b0, b1);
+		break;
+
+	case Q_GATEWAY:
+		/* (in && (addr == igwy1 || addr == igwy2)) ||
+		   (out && (addr == ogwy1 || addr == ogwy2))  phew! */
+		b1 = gen_cmp(igwy1_off, BPF_H, (bpf_int32)port);
+		b0 = gen_cmp(igwy2_off, BPF_H, (bpf_int32)port);
+		gen_or(b0, b1);
+		gen_and(bi, b1);
+		b2 = gen_cmp(ogwy1_off, BPF_H, (bpf_int32)port);
+		b0 = gen_cmp(ogwy2_off, BPF_H, (bpf_int32)port);
+		gen_or(b2, b0);
+		gen_and(bo, b0);
+		gen_or(b0, b1);
+		break;
+
+	case Q_AND:
+		b1 = gen_cmp(isrc_off, BPF_H, (bpf_int32)port);
+		b0 = gen_cmp(idst_off, BPF_H, (bpf_int32)port);
+		gen_and(b0, b1);
+		gen_and(bi, b1);
+		b2 = gen_cmp(osrc_off, BPF_H, (bpf_int32)port);
+		b0 = gen_cmp(odst_off, BPF_H, (bpf_int32)port);
+		gen_and(b2, b0);
+		gen_and(bo, b0);
+		gen_or(b0, b1);
+		break;
+
+	case Q_OR:
+		b1 = gen_cmp(isrc_off, BPF_H, (bpf_int32)port);
+		b0 = gen_cmp(idst_off, BPF_H, (bpf_int32)port);
+		gen_or(b0, b1);
+		gen_and(bi, b1);
+		b2 = gen_cmp(osrc_off, BPF_H, (bpf_int32)port);
+		b0 = gen_cmp(odst_off, BPF_H, (bpf_int32)port);
+		gen_or(b2, b0);
+		gen_and(bo, b0);
+		gen_or(b0, b1);
+		break;
+
+	case Q_DEFAULT:
+		b1 = gen_cmp(isrc_off, BPF_H, (bpf_int32)port);
+		b0 = gen_cmp(idst_off, BPF_H, (bpf_int32)port);
+		gen_or(b0, b1);
+		b0 = gen_cmp(osrc_off, BPF_H, (bpf_int32)port);
+		gen_or(b0, b1);
+		b0 = gen_cmp(odst_off, BPF_H, (bpf_int32)port);
+		gen_or(b0, b1);
+		break;
+
+	default:
+		sf_error("Internal error: Invalid direcion specifier: %d", dir);
+	}
+
+
+
+	b0 = gen_proto(proto);
+	gen_and(b0, b1);
+
+	return b1;
+}
+#else
 struct block *
 gen_portop(int port, int proto, int dir)
 {
@@ -815,6 +1079,7 @@ gen_portop(int port, int proto, int dir)
 
 	return b1;
 }
+#endif
 
 static struct block *
 gen_port(int port, int ip_proto, int dir)
@@ -1326,8 +1591,8 @@ gen_loadbytes(int out)
 	hoff = -1;
 #else
 #ifdef HAVE_PFSYNC_STATE
-	hoff = offsetof(pf_state_t, bytes[out ? 0:1][0]);
-	loff = offsetof(pf_state_t, bytes[out ? 0:1][1]);
+	hoff = offsetof(pf_state_t, bytes[out ? 0:1]);
+	loff = -1;
 #else
 #ifdef HAVE_STATE_COUNT_64
 #if _BYTE_ORDER == _LITTLE_ENDIAN
@@ -1358,8 +1623,8 @@ gen_loadpackets(int out)
 	hoff = -1;
 #else
 #ifdef HAVE_PFSYNC_STATE
-	hoff = offsetof(pf_state_t, packets[out ? 0:1][0]);
-	loff = offsetof(pf_state_t, packets[out ? 0:1][1]);
+	hoff = offsetof(pf_state_t, packets[out ? 0:1]);
+	loff = -1;
 #else
 #ifdef HAVE_STATE_COUNT_64
 #if _BYTE_ORDER == _LITTLE_ENDIAN
@@ -1418,6 +1683,30 @@ gen_loadexpire(void)
 
 	return a;
 }
+
+/*
+struct arth *
+gen_loadage(void)
+{
+	int loff, hoff;
+
+	loff = offsetof(pf_state_t, creation);
+	hoff = -1;
+
+	return gen_load64(hoff, loff);
+}
+
+struct arth *
+gen_loadexpire(void)
+{
+	int loff, hoff;
+
+	loff = offsetof(pf_state_t, expire);
+	hoff = -1;
+
+	return gen_load64(hoff, loff);
+}
+*/
 
 /*
  * Here we handle simple allocation of the scratch registers.
@@ -1560,7 +1849,7 @@ gen_ifname(char *ifname)
 		/* NOTREACHED */
 	}
 
-	b0 = gen_bcmp(off, strlen(ifname), ifname);
+	b0 = gen_bcmp(off, strlen(ifname), (unsigned char*) ifname);
 	return (b0);
 #else
 	sf_error("ifname not supported in this OpenBSD release");

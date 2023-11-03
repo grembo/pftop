@@ -47,7 +47,7 @@ struct rtentry;
 #include <netdb.h>
 #include <stdio.h>
 
-#include "pcap-int.h"
+#include <pcap/pcap.h>
 
 #include "sf-gencode.h"
 #include <pcap-namedb.h>
@@ -60,8 +60,6 @@ struct rtentry;
 #define NTOHL(x) (x) = ntohl(x)
 #define NTOHS(x) (x) = ntohs(x)
 #endif
-
-static __inline int xdtoi(int);
 
 /*
  *  Convert host name to internet address.
@@ -184,19 +182,6 @@ pcap_nametoproto(const char *str)
 		return p->p_proto;
 	else
 		return PROTO_UNDEF;
-}
-
-/* Hex digit to integer. */
-static __inline int
-xdtoi(c)
-	register int c;
-{
-	if (isdigit(c))
-		return c - '0';
-	else if (islower(c))
-		return c - 'a' + 10;
-	else
-		return c - 'A' + 10;
 }
 
 int

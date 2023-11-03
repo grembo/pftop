@@ -24,10 +24,6 @@
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  *
  */
-#ifndef lint
-static const char rcsid[] =
-    "@(#) $Header: /var/cvsroot/pftop/sf-grammer.y,v 1.3 2007/10/01 20:39:40 canacar Exp $ (LBL)";
-#endif
 
 #include <sys/types.h>
 #include <sys/time.h>
@@ -41,7 +37,7 @@ static const char rcsid[] =
 #include <stdio.h>
 #include <string.h>
 
-#include "pcap-int.h"
+#include <pcap/pcap.h>
 
 #include "sf-gencode.h"
 #include <pcap-namedb.h>

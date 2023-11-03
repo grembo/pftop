@@ -21,10 +21,6 @@
  * WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
-#ifndef lint
-static const char rcsid[] =
-    "@(#) $Header: /var/cvsroot/pftop/bpf_dump.c,v 1.2 2007/10/01 02:35:41 canacar Exp $ (LBL)";
-#endif
 
 #include <sys/types.h>
 #include <sys/time.h>
@@ -33,10 +29,10 @@ static const char rcsid[] =
 #include <stdio.h>
 
 
-extern void bpf_dump(struct bpf_program *, int);
+extern void bpf_dump(const struct bpf_program *, int);
 
 void
-bpf_dump(struct bpf_program *p, int option)
+bpf_dump(const struct bpf_program *p, int option)
 {
 	struct bpf_insn *insn;
 	int i;

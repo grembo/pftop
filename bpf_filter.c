@@ -142,11 +142,7 @@ bpf_m_xhalf(m, k, err)
  * buflen is the amount of data present
  */
 u_int
-bpf_filter(pc, p, wirelen, buflen)
-	struct bpf_insn *pc;
-	u_char *p;
-	u_int wirelen;
-	u_int buflen;
+bpf_filter(const struct bpf_insn *pc, const u_char *p, u_int wirelen, u_int buflen)
 {
 	u_int64_t A = 0, X = 0;
 	u_int64_t k;

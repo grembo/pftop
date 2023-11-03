@@ -18,6 +18,19 @@
 #ifndef _CONFIG_H_
 #define _CONFIG_H_
 
+#include <stdbool.h>
+#include <unistd.h>
+
+#include <sys/counter.h>
+#include <sys/param.h>
+#include <sys/queue.h>
+
+#include <net/ethernet.h>
+#include <net/if.h>
+#include <net/pfvar.h>
+#include <netinet/in.h>
+
+#include <libpfctl.h>
 
 #if OS_LEVEL > 30
 #define HAVE_STATE_NOROUTE
@@ -42,7 +55,7 @@
 #if OS_LEVEL > 32
 #define HAVE_ADDR_MASK
 #define HAVE_ADDR_TYPE
-#define HAVE_ALTQ
+/* #define HAVE_ALTQ */
 #define HAVE_RULE_TOS
 #define HAVE_OP_RRG
 #endif
@@ -74,11 +87,19 @@
 #define HAVE_PFSYNC_STATE
 #endif
 
+#if OS_LEVEL > 43
+#define HAVE_PFSYNC_KEY
+#endif
+
 #ifdef HAVE_PFSYNC_STATE
-typedef struct pfsync_state pf_state_t;
+#if OS_LEVEL > 45
+typedef struct pfctl_state pf_state_t;
+#else
+typedef struct pfctl_state pf_state_t;
+#endif
 typedef struct pfsync_state_host pf_state_host_t;
-typedef struct pfsync_state_peer pf_state_peer_t;
-#define COUNTER(c) ((((u_int64_t) c[0])<<32) + c[1])
+typedef struct pfctl_state_peer pf_state_peer_t;
+#define COUNTER(c) (c)
 #define pfs_ifname ifname
 #else
 typedef struct pf_state pf_state_t;

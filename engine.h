@@ -107,7 +107,7 @@ void end_line(void);
 void end_page(void);
 
 void print_fld_str(field_def *fld, const char *str);
-void print_fld_age(field_def *fld, unsigned int age);
+void print_fld_age(field_def *fld, u_int32_t age);
 void print_fld_sdiv(field_def *fld, u_int64_t size, int div);
 void print_fld_size(field_def *fld, u_int64_t size);
 void print_fld_bw(field_def *fld, double bw);

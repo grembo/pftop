@@ -28,7 +28,7 @@
 #ifndef _SF_GENCODE_H_
 #define _SF_GENCODE_H_
 
-#include "pcap-int.h"
+#include <pcap/pcap.h>
 
 /* Address qualifiers. */
 #define Q_HOST		1
@@ -169,8 +169,8 @@ struct arth  *gen_loadage(void);
 struct arth  *gen_loadexpire(void);
 
 void bpf_optimize(struct block **);
-__dead void bpf_error(const char *, ...)
-    __attribute__((volatile, __format__ (printf, 1, 2)));
+__dead2 void bpf_error(const char *, ...)
+    __attribute__((__format__ (printf, 1, 2)));
 
 void finish_parse(struct block *);
 char *sdup(const char *);
@@ -184,11 +184,11 @@ void sappend(struct slist *, struct slist *);
 #define JT(b)  ((b)->et.succ)
 #define JF(b)  ((b)->ef.succ)
 
-__dead void sf_error(const char *fmt, ...);
+__dead2 void sf_error(const char *fmt, ...);
 const char *sf_get_error(void);
 int sf_compile(struct bpf_program *, char *, int, bpf_u_int32);
 void sf_freecode(struct bpf_program *);
-void bpf_dump(struct bpf_program *, int);
+void bpf_dump(const struct bpf_program *, int);
 
 extern int no_optimize;
 

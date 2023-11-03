@@ -18,7 +18,6 @@
 
 
 #include <sys/types.h>
-#include <sys/queue.h>
 
 #include <ctype.h>
 #include <curses.h>
@@ -27,6 +26,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "queue.h"
 #include "engine.h"
 
 #ifndef MIN
@@ -306,7 +306,7 @@ print_bar_title(field_def *fld)
 void
 print_fld_bar(field_def *fld, int value)
 {
-	int i, tw, val, cur;
+	int i, tw, val;
 
 	if (fld->width < 1)
 		return;
@@ -315,7 +315,6 @@ print_fld_bar(field_def *fld, int value)
 	tw = fld->arg / 2;
 
 	tb_start();
-	cur = 0;
 	for(i = 0; i < fld->width; i++) {
 		tw += fld->arg;
 
@@ -604,7 +603,7 @@ prev_view(void)
 /* generic field printing */
 
 void
-print_fld_age(field_def *fld, unsigned int age)
+print_fld_age(field_def *fld, u_int32_t age)
 {
 	int len;
 	unsigned int h, m, s;
@@ -808,6 +807,9 @@ void
 next_order(void)
 {
 	order_type *o, *oc;
+
+	if (curr_view->mgr->order_list == NULL)
+		return;
 
 	oc = curr_view->mgr->order_curr;
 

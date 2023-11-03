@@ -10,7 +10,7 @@ SRCS+=	sf-gencode.c sf-grammer.y sf-scanner.l pcap-nametoaddr.c
 SRCS+=  bpf_optimize.c bpf_filter.c bpf_dump.c bpf_image.c
 MAN=	pftop.8
 
-CFLAGS+= -Wall -DOS_LEVEL=${OSLEVEL}
+CFLAGS+= -Wall -Wno-unneeded-internal-declaration -DOS_LEVEL=${OSLEVEL}
 LDADD+= -lcurses
 
 MANDIR=${LOCALBASE}/man/cat
