@@ -42,10 +42,6 @@
 #include "sf-gencode.h"
 #include <pcap-namedb.h>
 
-#ifdef HAVE_OS_PROTO_H
-#include "os-proto.h"
-#endif
-
 #define QSET(q, p, d, a) (q).proto = (p),\
 			 (q).dir = (d),\
 			 (q).addr = (a)

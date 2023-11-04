@@ -92,11 +92,7 @@ update_state(struct sc_ent *prev, pf_state_t *new, double rate)
 	assert (prev != NULL && new != NULL);
 	prev->t = time(NULL);
 	prev->rate = rate;
-#ifdef HAVE_INOUT_COUNT
-	prev->bytes = COUNTER(new->bytes[0]) + COUNTER(new->bytes[1]);
-#else
-	prev->bytes = COUNTER(new->bytes);
-#endif
+	prev->bytes = (new->bytes[0]) + (new->bytes[1]);
 	if (prev->peak < rate)
 		prev->peak = rate;
 }
@@ -118,26 +114,8 @@ add_state(pf_state_t *st)
 
 	cache_size--;
 
-#ifdef HAVE_PFSYNC_STATE
-#ifdef HAVE_FINE_GRAINED_LOCKING
 	ent->id = st->id;
-#else
-	ent->id[0] = st->id[0];
-	ent->id[1] = st->id[1];
-#endif
-#else
-	ent->addr[0] = st->lan.addr;
-	ent->port[0] = st->lan.port;
-	ent->addr[1] = st->ext.addr;
-	ent->port[1] = st->ext.port;
-	ent->af = st->af;
-	ent->proto = st->proto;
-#endif
-#ifdef HAVE_INOUT_COUNT
-	ent->bytes = COUNTER(st->bytes[0]) + COUNTER(st->bytes[1]);
-#else
-	ent->bytes = st->bytes;
-#endif
+	ent->bytes = (st->bytes[0]) + (st->bytes[1]);
 	ent->peak = 0;
 	ent->rate = 0;
 	ent->t = time(NULL);
@@ -156,21 +134,7 @@ cache_state(pf_state_t *st)
 	if (cache_max == 0)
 		return (NULL);
 
-#ifdef HAVE_PFSYNC_STATE
-#ifdef HAVE_FINE_GRAINED_LOCKING
 	ent.id = st->id;
-#else
-	ent.id[0] = st->id[0];
-	ent.id[1] = st->id[1];
-#endif
-#else
-	ent.addr[0] = st->lan.addr;
-	ent.port[0] = st->lan.port;
-	ent.addr[1] = st->ext.addr;
-	ent.port[1] = st->ext.port;
-	ent.af = st->af;
-	ent.proto = st->proto;
-#endif
 	old = RB_FIND(sc_tree, &sctree, &ent);
 
 	if (old == NULL) {
@@ -178,17 +142,10 @@ cache_state(pf_state_t *st)
 		return (NULL);
 	}
 
-#ifdef HAVE_INOUT_COUNT
-	if (COUNTER(st->bytes[0]) + COUNTER(st->bytes[1]) < old->bytes)
+	if ((st->bytes[0]) + (st->bytes[1]) < old->bytes)
 		return (NULL);
 
-	sd = COUNTER(st->bytes[0]) + COUNTER(st->bytes[1]) - old->bytes;
-#else
-	if (st->bytes < old->bytes)
-		return (NULL);
-
-	sd = st->bytes - old->bytes;
-#endif
+	sd = (st->bytes[0]) + (st->bytes[1]) - old->bytes;
 
 	td = time(NULL) - old->t;
 
@@ -227,82 +184,10 @@ cache_endupdate(void)
 static __inline int
 sc_cmp(struct sc_ent *a, struct sc_ent *b)
 {
-#ifdef HAVE_PFSYNC_STATE
-#ifdef HAVE_FINE_GRAINED_LOCKING
 	if (a->id > b->id)
 		return (1);
 	if (a->id < b->id)
 		return (-1);
-#else
-	if (a->id[0] > b->id[0])
-		return (1);
-	if (a->id[0] < b->id[0])
-		return (-1);
-	if (a->id[1] > b->id[1])
-		return (1);
-	if (a->id[1] < b->id[1])
-		return (-1);
-#endif
-#else	
-       	int diff;
 
-	if ((diff = a->proto - b->proto) != 0)
-		return (diff);
-	if ((diff = a->af - b->af) != 0)
-		return (diff);
-	switch (a->af) {
-	case AF_INET:
-		if (a->addr[0].addr32[0] > b->addr[0].addr32[0])
-			return (1);
-		if (a->addr[0].addr32[0] < b->addr[0].addr32[0])
-			return (-1);
-		if (a->addr[1].addr32[0] > b->addr[1].addr32[0])
-			return (1);
-		if (a->addr[1].addr32[0] < b->addr[1].addr32[0])
-			return (-1);
-		break;
-	case AF_INET6:
-		if (a->addr[0].addr32[0] > b->addr[0].addr32[0])
-			return (1);
-		if (a->addr[0].addr32[0] < b->addr[0].addr32[0])
-			return (-1);
-		if (a->addr[0].addr32[1] > b->addr[0].addr32[1])
-			return (1);
-		if (a->addr[0].addr32[1] < b->addr[0].addr32[1])
-			return (-1);
-		if (a->addr[0].addr32[2] > b->addr[0].addr32[2])
-			return (1);
-		if (a->addr[0].addr32[2] < b->addr[0].addr32[2])
-			return (-1);
-		if (a->addr[0].addr32[3] > b->addr[0].addr32[3])
-			return (1);
-		if (a->addr[0].addr32[3] < b->addr[0].addr32[3])
-			return (-1);
-		if (a->addr[1].addr32[0] > b->addr[1].addr32[0])
-			return (1);
-		if (a->addr[1].addr32[0] < b->addr[1].addr32[0])
-			return (-1);
-		if (a->addr[1].addr32[1] > b->addr[1].addr32[1])
-			return (1);
-		if (a->addr[1].addr32[1] < b->addr[1].addr32[1])
-			return (-1);
-		if (a->addr[1].addr32[2] > b->addr[1].addr32[2])
-			return (1);
-		if (a->addr[1].addr32[2] < b->addr[1].addr32[2])
-			return (-1);
-		if (a->addr[1].addr32[3] > b->addr[1].addr32[3])
-			return (1);
-		if (a->addr[1].addr32[3] < b->addr[1].addr32[3])
-			return (-1);
-		break;
-		default:
-			return 1;
-	}
-
-	if ((diff = a->port[0] - b->port[0]) != 0)
-		return (diff);
-	if ((diff = a->port[1] - b->port[1]) != 0)
-		return (diff);
-#endif
 	return (0);
 }

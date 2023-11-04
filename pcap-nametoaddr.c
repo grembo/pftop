@@ -52,10 +52,6 @@ struct rtentry;
 #include "sf-gencode.h"
 #include <pcap-namedb.h>
 
-#ifdef HAVE_OS_PROTO_H
-#include "os-proto.h"
-#endif
-
 #ifndef NTOHL
 #define NTOHL(x) (x) = ntohl(x)
 #define NTOHS(x) (x) = ntohs(x)

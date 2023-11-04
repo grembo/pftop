@@ -77,59 +77,13 @@
 
 #define DEFAULT_CACHE_SIZE 10000
 
-#ifndef HAVE_PROTO_NAMES
-/* UDP state enumeration */
-#define PFUDPS_NSTATES		3	/* number of state levels */
-
-#define PFUDPS_NAMES { \
-	"NO TRAFFIC", \
-	"SINGLE", \
-	"MULTIPLE", \
-	NULL \
-}
-
-/* Other protocol state enumeration */
-#define PFOTHERS_NSTATES	3	/* number of state levels */
-
-#define PFOTHERS_NAMES { \
-	"NO TRAFFIC", \
-	"SINGLE", \
-	"MULTIPLE", \
-	NULL \
-}
-#endif
-
-#ifdef HAVE_ADDR_WRAP
-#ifdef HAVE_ADDR_TYPE
 /* XXX must also check type before use */
 #define PT_ADDR(x) (&(x)->addr.v.a.addr)
-#else
-#define PT_ADDR(x) (&(x)->addr.addr)
-#endif
-#else
-#define PT_ADDR(x) (&(x)->addr)
-#endif
 
-#ifdef HAVE_ADDR_MASK
-#ifdef HAVE_ADDR_TYPE
 /* XXX must also check type before use */
 #define PT_MASK(x) (&(x)->addr.v.a.mask)
-#else
-#define PT_MASK(x) (&(x)->addr.mask)
-#endif
-#else
-#define PT_MASK(x) (&(x)->mask)
-#endif
 
-#ifdef HAVE_STATE_NOROUTE
-#ifdef HAVE_ADDR_TYPE
 #define PT_NOROUTE(x) ((x)->addr.type == PF_ADDR_NOROUTE)
-#else
-#define PT_NOROUTE(x) ((x)->noroute)
-#endif
-#else
-#define PT_NOROUTE(x) (0)
-#endif
 
 /* view management */
 int select_states(void);
@@ -176,10 +130,6 @@ int cachestates = 0;
 struct bpf_program filter_prog;
 char *filter_string = NULL;
 int dumpfilter = 0;
-
-#ifndef HAVE_RULE_LABELS
-#define PF_RULE_LABEL_SIZE 20
-#endif
 
 #define MIN_LABEL_SIZE 5
 #define ANCHOR_FLD_SIZE 12
@@ -413,15 +363,10 @@ struct command cm_count = {"Number of lines to display", cmd_count};
 int
 sort_size_callback(const void *s1, const void *s2)
 {
-#ifdef HAVE_INOUT_COUNT
 	u_int64_t b1 = (state_buf[* (u_int32_t *) s1].bytes[0]) + 
 		(state_buf[* (u_int32_t *) s1].bytes[1]);
 	u_int64_t b2 = (state_buf[* (u_int32_t *) s2].bytes[0]) + 
 		(state_buf[* (u_int32_t *) s2].bytes[1]);
-#else
-	u_int64_t b1 = COUNTER(state_buf[* (u_int32_t *) s1].bytes);
-	u_int64_t b2 = COUNTER(state_buf[* (u_int32_t *) s2].bytes);
-#endif
 	if (b2 > b1)
 		return sortdir;
 	if (b2 < b1)
@@ -432,15 +377,10 @@ sort_size_callback(const void *s1, const void *s2)
 int
 sort_pkt_callback(const void *s1, const void *s2)
 {
-#ifdef HAVE_INOUT_COUNT
 	u_int64_t p1 = (state_buf[* (u_int32_t *) s1].packets[0]) + 
 		(state_buf[* (u_int32_t *) s1].packets[1]);
 	u_int64_t p2 = (state_buf[* (u_int32_t *) s2].packets[0]) + 
 		(state_buf[* (u_int32_t *) s2].packets[1]);
-#else
-	u_int64_t p1 = COUNTER(state_buf[* (u_int32_t *) s1].packets);
-	u_int64_t p2 = COUNTER(state_buf[* (u_int32_t *) s2].packets);
-#endif
 	if (p2 > p1)
 		return sortdir;
 	if (p2 < p1)
@@ -540,8 +480,6 @@ compare_addr(int af, const struct pf_addr *a, const struct pf_addr *b)
 	
 	return 0;
 }
-
-#ifdef HAVE_PFSYNC_KEY
 
 #ifdef __GNUC__
 __inline__
@@ -647,86 +585,6 @@ sort_port_callback(const pf_state_t *s1,
 		return ret * sortdir;
 	return -sortdir;
 }
-
-#else	/* HAVE_PFSYNC_KEY */
-
-#ifdef __GNUC__
-__inline__
-#endif
-int
-sort_addr_callback(const pf_state_t *s1,
-		   const pf_state_t *s2, int dir)
-{
-	const pf_state_host_t *a, *b;
-	int af, ret;
-
-	af = s1->af;
-
-	if (af > s2->af)
-		return sortdir;
-	if (af < s2->af)
-		return -sortdir;
-	
-	if (s1->direction == dir) {
-		a = &s1->lan;
-	} else {
-		a = &s1->ext;
-	}
-
-	if (s2->direction == dir) {
-		b = &s2->lan;
-	} else {
-		b = &s2->ext;
-	}
-
-	ret = compare_addr(af, &a->addr, &b->addr);
-	if (ret)
-		return ret * sortdir;
-
-	if (ntohs(a->port) > ntohs(b->port))
-		return sortdir;
-	return -sortdir;
-}
-
-#ifdef __GNUC__
-__inline__
-#endif
-int
-sort_port_callback(const pf_state_t *s1,
-		   const pf_state_t *s2, int dir)
-{
-	const pf_state_host_t *a, *b;
-	int af;
-
-	af = s1->af;
-
-	if (af > s2->af)
-		return sortdir;
-	if (af < s2->af)
-		return -sortdir;
-	
-	if (s1->direction == dir) {
-		a = &s1->lan;
-	} else {
-		a = &s1->ext;
-	}
-
-	if (s2->direction == dir) {
-		b = &s2->lan;
-	} else {
-		b = &s2->ext;
-	 }
-
-	if (ntohs(a->port) > ntohs(b->port))
-		return sortdir;
-	if (ntohs(a->port) < ntohs(b->port))
-		return -sortdir;
-
-	if (compare_addr(af, &a->addr, &b->addr) > 0)
-		return sortdir;
-	return -sortdir;
-}
-#endif	/* HAVE_PFSYNC_KEY */
 
 int sort_sa_callback(const void *p1, const void *p2)
 {
@@ -986,7 +844,7 @@ tb_print_addr(struct pf_addr * addr, struct pf_addr * mask, int af)
 			tbprintf("/%u", unmask(mask, af));
 	}
 }
-#ifdef HAVE_PFSYNC_KEY
+
 void
 print_fld_host2(field_def *fld, struct pfctl_state_key *ks,
 		struct pfctl_state_key *kn, int idx, int af)
@@ -1027,31 +885,6 @@ print_fld_host2(field_def *fld, struct pfctl_state_key *ks,
 	}
 
 }
-#else
-void
-print_fld_host(field_def *fld, pf_state_host_t * h, int af)
-{
-	u_int16_t p = ntohs(h->port);
-
-	if (fld == NULL)
-		return;
-
-	if (fld->width < 3) {
-		print_fld_str(fld, "*");
-		return;
-	}
-
-	tb_start();
-	tb_print_addr(&h->addr, NULL, af);
-
-	if (af == AF_INET)
-		tbprintf(":%u", p);
-	else
-		tbprintf("[%u]", p);
-
-	print_fld_tb(fld);
-}
-#endif
 
 void
 print_fld_state(field_def *fld, unsigned int proto,
@@ -1123,7 +956,6 @@ print_state(pf_state_t * s, struct sc_ent * ent)
 	else
 		print_fld_uint(FLD_PROTO, s->key[PF_SK_WIRE].proto);
 
-#ifdef HAVE_PFSYNC_KEY
 	if (s->direction == PF_OUT) {
 		print_fld_host2(FLD_SRC, &s->key[PF_SK_WIRE],
 		    &s->key[PF_SK_STACK], 1, s->key[PF_SK_WIRE].af);
@@ -1135,20 +967,6 @@ print_state(pf_state_t * s, struct sc_ent * ent)
 		print_fld_host2(FLD_DEST, &s->key[PF_SK_STACK],
 		    &s->key[PF_SK_WIRE], 1, s->key[PF_SK_STACK].af);
 	}
-#else
-	if (s->direction == PF_OUT) {
-		print_fld_host(FLD_SRC, &s->lan, s->key[PF_SK_WIRE].af);
-		print_fld_host(FLD_DEST, &s->ext, s->key[PF_SK_WIRE].af);
-	} else {
-		print_fld_host(FLD_SRC, &s->ext, s->key[PF_SK_WIRE].af);
-		print_fld_host(FLD_DEST, &s->lan, s->key[PF_SK_WIRE].af);
-	}
-
-	if (PF_ANEQ(&s->lan.addr, &s->gwy.addr, s->key[PF_SK_WIRE].af) ||
-	    (s->lan.port != s->gwy.port)) {
-		print_fld_host(FLD_GW, &s->gwy, s->key[PF_SK_WIRE].af);
-	}
-#endif
 
 	if (s->direction == PF_OUT)
 		print_fld_str(FLD_DIR, "Out");
@@ -1158,30 +976,16 @@ print_state(pf_state_t * s, struct sc_ent * ent)
 	print_fld_state(FLD_STATE, s->key[PF_SK_WIRE].proto, src->state, dst->state);
 	print_fld_age(FLD_AGE, s->creation);
 	print_fld_age(FLD_EXP, s->expire);
-#ifdef HAVE_INOUT_COUNT
 	{
-		u_int64_t sz = COUNTER(s->bytes[0]) + COUNTER(s->bytes[1]);
+		u_int64_t sz = (s->bytes[0]) + (s->bytes[1]);
 
-		print_fld_size(FLD_PKTS, COUNTER(s->packets[0]) +
-			       COUNTER(s->packets[1]));
+		print_fld_size(FLD_PKTS, (s->packets[0]) +
+			       (s->packets[1]));
 		print_fld_size(FLD_BYTES, sz);
 		print_fld_rate(FLD_SA, (s->creation) ?
 			       ((double)sz/s->creation) : -1);
 	}
-#else
-	print_fld_size(FLD_PKTS, s->packets);
-	print_fld_size(FLD_BYTES, s->bytes);
-	print_fld_rate(FLD_SA, (s->creation) ?
-		       ((double)s->bytes/s->creation) : -1);
-
-#endif
-#ifdef HAVE_PFSYNC_STATE
 	print_fld_uint(FLD_RULE, ntohl(s->rule));
-#else
-#ifdef HAVE_RULE_NUMBER
-	print_fld_uint(FLD_RULE, s->rule.nr);
-#endif
-#endif
 	if (cachestates && ent != NULL) {
 		print_fld_rate(FLD_SI, ent->rate);
 		print_fld_rate(FLD_SP, ent->peak);
@@ -1238,9 +1042,7 @@ add_rule_alloc(u_int32_t nr)
 	}
 }
 
-#ifdef HAVE_RULE_LABELS
 int label_length;
-#endif
 
 int
 read_anchor_rules(char *anchor)
@@ -1250,9 +1052,7 @@ read_anchor_rules(char *anchor)
 	u_int32_t nr, num, off;
 
 	memset(&pr, 0, sizeof(pr));
-#ifdef HAVE_RULESETS
 	strlcpy(pr.anchor, anchor, sizeof(pr.anchor));
-#endif
 	if (ioctl(pf_dev, DIOCGETRULES, &pr)) {
 		msgprintf("Error Reading Anchor %s (DIOCGETRULES): %s",
 			  *anchor ? anchor : "/", strerror(errno));
@@ -1269,25 +1069,20 @@ read_anchor_rules(char *anchor)
 				  strerror(errno));
 			return (-1);
 		}
-#ifdef HAVE_RULESETS
 		/* XXX overload pr.anchor, to store a pointer to
 		 * anchor name */
 		rule.anchor = (struct pfctl_anchor *) anchor;
-#endif
-#ifdef HAVE_RULE_LABELS
 		{
 			int len = strlen(pr.rule.label);
 			if (len > label_length)
 				label_length = len;
 		}
-#endif
 		rules[off + nr] = rule;
 	}
 
 	return (num);
 }
 
-#ifdef HAVE_RULESETS
 struct anchor_name {
 	char name[MAXPATHLEN];
 	struct anchor_name *next;
@@ -1424,7 +1219,6 @@ compute_anchor_field(void)
 		need_update = 1;
 	}
 }
-#endif
 
 int
 read_rules(void)
@@ -1432,19 +1226,12 @@ read_rules(void)
 	int ret;
 	num_rules = 0;
 
-#ifdef HAVE_RULE_LABELS
 	label_length = MIN_LABEL_SIZE;
-#endif
 
-#ifdef HAVE_RULESETS
 	reset_anchor_names();
 	ret = read_rulesets(NULL);
 	compute_anchor_field();
-#else
-	ret = read_anchor_rules(NULL);
-#endif
 
-#ifdef HAVE_RULE_LABELS
 	{
 		int nw, mw;
 		nw = mw = label_length;
@@ -1459,17 +1246,14 @@ read_rules(void)
 			need_update = 1;
 		}
 	}
-#endif
 
 	num_disp = num_rules;
 	return (ret);
 }
 
-#ifdef HAVE_ADDR_WRAP
 void
 tb_print_addrw(struct pf_addr_wrap *addr, struct pf_addr *mask, u_int8_t af)
 {
-#ifdef HAVE_ADDR_TYPE
 	switch (addr->type) {
 	case PF_ADDR_ADDRMASK:
 		tb_print_addr(&addr->v.a.addr, mask, af);
@@ -1487,14 +1271,7 @@ tb_print_addrw(struct pf_addr_wrap *addr, struct pf_addr *mask, u_int8_t af)
 		tbprintf("UNKNOWN");
 		break;
 	}
-#else
-	if (addr->addr_dyn != NULL)
-		tbprintf("(%s)", addr->addr.pfa.ifname);
-	else
-		tb_print_addr(&addr->addr, mask, af);
-#endif
 }
-#endif
 
 void
 tb_print_op(u_int8_t op, const char *a1, const char *a2)
@@ -1503,10 +1280,8 @@ tb_print_op(u_int8_t op, const char *a1, const char *a2)
 		tbprintf("%s >< %s ", a1, a2);
 	else if (op == PF_OP_XRG)
 		tbprintf("%s <> %s ", a1, a2);
-#ifdef HAVE_OP_RRG
 	else if (op == PF_OP_RRG)
 		tbprintf("%s:%s ", a1, a2);
-#endif
 	else if (op == PF_OP_EQ)
 		tbprintf("= %s ", a1);
 	else if (op == PF_OP_NE)
@@ -1558,17 +1333,9 @@ tb_print_fromto(struct pf_rule_addr *src, struct pf_rule_addr *dst,
 			 PF_AZERO(PT_MASK(src), AF_INET6))
 			tbprintf("any ");
 		else {
-#ifdef HAVE_NEG
 			if (src->neg)
-#else
-			if (src->not)
-#endif
 				tbprintf("! ");
-#ifdef HAVE_ADDR_WRAP
 			tb_print_addrw(&src->addr, PT_MASK(src), af);
-#else
-			tb_print_addr(&src->addr, PT_MASK(src), af);
-#endif
 			tbprintf(" ");
 		}
 		if (src->port_op)
@@ -1583,17 +1350,9 @@ tb_print_fromto(struct pf_rule_addr *src, struct pf_rule_addr *dst,
 			 PF_AZERO(PT_MASK(dst), AF_INET6))
 			tbprintf("any ");
 		else {
-#ifdef HAVE_NEG
 			if (dst->neg)
-#else
-			if (dst->not)
-#endif
 				tbprintf("! ");
-#ifdef HAVE_ADDR_WRAP
 			tb_print_addrw(&dst->addr, PT_MASK(dst), af);
-#else
-			tb_print_addr(&dst->addr, PT_MASK(dst), af);
-#endif
 			tbprintf(" ");
 		}
 		if (dst->port_op)
@@ -1603,7 +1362,6 @@ tb_print_fromto(struct pf_rule_addr *src, struct pf_rule_addr *dst,
 	}
 }
 
-#ifdef HAVE_RULE_UGID
 void
 tb_print_ugid(u_int8_t op, unsigned u1, unsigned u2,
 	      const char *t, unsigned umax)
@@ -1619,7 +1377,6 @@ tb_print_ugid(u_int8_t op, unsigned u1, unsigned u2,
 	else
 		tb_print_op(op, a1, a2);
 }
-#endif
 
 void
 tb_print_flags(u_int8_t f)
@@ -1639,33 +1396,18 @@ print_rule(struct pfctl_rule *pr)
 	    "no Nat", "Binat", "no Binat", "Rdr", "no Rdr" };
 	int numact = sizeof(actiontypes) / sizeof(char *);
 
-#ifdef HAVE_PF_ROUTE
 	static const char *routetypes[] = { "", "fastroute", "route-to",
 	    "dup-to", "reply-to" };
 
 	int numroute = sizeof(routetypes) / sizeof(char *);
-#endif
 
 	if (pr == NULL) return;
 
-#ifdef HAVE_RULE_LABELS
 	print_fld_str(FLD_LABEL, pr->label[0]);
-#endif
-#ifdef HAVE_RULE_STATES
-#ifdef HAVE_PFSYNC_KEY
 	print_fld_size(FLD_STATS, pr->states_tot);
-#else
-	print_fld_size(FLD_STATS, pr->states);
-#endif
-#endif
 
-#ifdef HAVE_INOUT_COUNT_RULES
 	print_fld_size(FLD_PKTS, pr->packets[0] + pr->packets[1]);
 	print_fld_size(FLD_BYTES, pr->bytes[0] + pr->bytes[1]);
-#else
-	print_fld_size(FLD_PKTS, pr->packets);
-	print_fld_size(FLD_BYTES, pr->bytes);
-#endif
 	print_fld_uint(FLD_RULE, pr->nr);
 	if (pr->direction == PF_IN)
 		print_fld_str(FLD_DIR, "In");
@@ -1705,25 +1447,19 @@ print_rule(struct pfctl_rule *pr)
 
 	if (pr->ifname[0]) {
 		tb_start();
-#ifdef HAVE_RULE_IFNOT
 		if (pr->ifnot)
 			tbprintf("!");
-#endif
 		tbprintf("%s", pr->ifname);
 		print_fld_tb(FLD_IF);
 	}
-#ifdef HAVE_MAX_STATES
 	if (pr->max_states)
 		print_fld_uint(FLD_STMAX, pr->max_states);
-#endif
 	/* print info field */
 
 	tb_start();
 
-#ifdef HAVE_RULE_NATPASS
 	if (pr->natpass)
 		tbprintf("pass ");
-#endif
 	if (pr->action == PF_DROP) {
 		if (pr->rule_flag & PFRULE_RETURNRST)
 			tbprintf("return-rst ");
@@ -1739,13 +1475,12 @@ print_rule(struct pfctl_rule *pr)
 			tbprintf("drop ");
 	}
 
-#ifdef HAVE_PF_ROUTE
 	if (pr->rt > 0 && pr->rt < numroute) {
 		tbprintf("%s ", routetypes[pr->rt]);
 		if (pr->rt != PF_FASTROUTE)
 			tbprintf("... ");
 	}
-#endif
+
 	if (pr->af) {
 		if (pr->af == AF_INET)
 			tbprintf("inet ");
@@ -1754,14 +1489,12 @@ print_rule(struct pfctl_rule *pr)
 	}
 
 	tb_print_fromto(&pr->src, &pr->dst, pr->af, pr->proto);
-#ifdef HAVE_RULE_UGID
 	if (pr->uid.op)
 		tb_print_ugid(pr->uid.op, pr->uid.uid[0], pr->uid.uid[1],
 		        "user", UINT_MAX);
 	if (pr->gid.op)
 		tb_print_ugid(pr->gid.op, pr->gid.gid[0], pr->gid.gid[1],
 		        "group", UINT_MAX);
-#endif
 
 	if (pr->flags || pr->flagset) {
 		tbprintf(" flags ");
@@ -1772,10 +1505,8 @@ print_rule(struct pfctl_rule *pr)
 
 	tbprintf(" ");
 
-#ifdef HAVE_RULE_TOS
 	if (pr->tos)
 		tbprintf("tos 0x%2.2x ", pr->tos);
-#endif
 #ifdef PFRULE_FRAGMENT
 	if (pr->rule_flag & PFRULE_FRAGMENT)
 		tbprintf("fragment ");
@@ -1790,10 +1521,8 @@ print_rule(struct pfctl_rule *pr)
 #endif
 	if (pr->min_ttl)
 		tbprintf("min-ttl %d ", pr->min_ttl);
-#ifdef HAVE_MAX_MSS
 	if (pr->max_mss)
 		tbprintf("max-mss %d ", pr->max_mss);
-#endif
 	if (pr->allow_opts)
 		tbprintf("allow-opts ");
 
@@ -1821,7 +1550,6 @@ print_rule(struct pfctl_rule *pr)
 	else if (pr->qname[0])
 		tbprintf("queue %s ", pr->qname);
 #endif
-#ifdef HAVE_TAGS
 	if (pr->tagname[0])
 		tbprintf("tag %s ", pr->tagname);
 	if (pr->match_tagname[0]) {
@@ -1829,13 +1557,10 @@ print_rule(struct pfctl_rule *pr)
 			tbprintf("! ");
 		tbprintf("tagged %s ", pr->match_tagname);
 	}
-#endif
 	print_fld_tb(FLD_RINFO);
 
-#ifdef HAVE_RULESETS
 	/* XXX anchor field overloaded with anchor name */
 	print_fld_str(FLD_ANCHOR, (char *)pr->anchor);
-#endif
 	end_line();
 }
 
@@ -2560,11 +2285,7 @@ main(int argc, char *argv[])
 		interactive = 0;
 	}
 
-#ifdef HAVE_DEVICE_RO
 	pf_dev = open("/dev/pf", O_RDONLY);
-#else
-	pf_dev = open("/dev/pf", O_RDWR);
-#endif
 	if (pf_dev == -1)
 		err(1, "open(\"/dev/pf\")");
 
@@ -2586,12 +2307,8 @@ main(int argc, char *argv[])
 		errx(1, "Failed to initialize cache.");
 
 	/* initialize version dependent fields */
-#ifdef HAVE_MAX_STATES
 	show_field(FLD_STMAX);
-#endif
-#ifdef HAVE_RULESETS
 	show_field(FLD_ANCHOR);
-#endif
 
 	if (interactive && cachesize > 0)
 		cachestates = 1;

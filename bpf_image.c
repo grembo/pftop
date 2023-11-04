@@ -30,10 +30,6 @@
 
 #include <pcap/pcap.h>
 
-#ifdef HAVE_OS_PROTO_H
-#include "os-proto.h"
-#endif
-
 char *
 bpf_image(const struct bpf_insn *p, int n)
 {
