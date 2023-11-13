@@ -13,7 +13,7 @@ MAN=	pftop.8
 CFLAGS+= -Wall -Wno-unneeded-internal-declaration -DOS_LEVEL=${OSLEVEL}
 LDADD+= -lcurses
 
-MANDIR=${LOCALBASE}/man/cat
+MANDIR=${LOCALBASE}/man/man
 BINDIR=${LOCALBASE}/sbin
 
 .y.c:
