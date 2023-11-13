@@ -11,7 +11,7 @@ SRCS+=  bpf_optimize.c bpf_filter.c bpf_dump.c bpf_image.c
 MAN=	pftop.8
 
 CFLAGS+= -Wall -Wno-unneeded-internal-declaration -DOS_LEVEL=${OSLEVEL}
-LDADD+= -lcurses -lpfctl
+LDADD+= -L${LOCALBASE}/lib -lcurses -lpfctl
 
 MANDIR=${LOCALBASE}/man/man
 BINDIR=${LOCALBASE}/sbin
