@@ -644,6 +644,7 @@ void
 alloc_buf(int ns)
 {
 	int len;
+	int old_len = state_buf_len;
 
 	if (ns < MIN_NUM_STATES)
 		ns = MIN_NUM_STATES;
@@ -660,6 +661,11 @@ alloc_buf(int ns)
 		    state_cache == NULL)
 			err(1, "realloc");
 		state_buf_len = len;
+		for (int i = old_len; i < len; i++) {
+			bzero(&state_buf[i], sizeof(pf_state_t));
+			state_ord[i] = 0;
+			state_cache[i] = 0;
+		}
 	}
 }
 
