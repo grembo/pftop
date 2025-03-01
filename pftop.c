@@ -730,6 +730,12 @@ read_states(void)
 		cache_endupdate();
 	}
 
+	while (!TAILQ_EMPTY(&ps.states)) {
+		i = TAILQ_FIRST(&ps.states);
+		TAILQ_REMOVE(&ps.states, i, entry);
+		free(i);
+	}
+
 	num_disp = num_states;
 	return 0;
 }
