@@ -730,6 +730,8 @@ read_states(void)
 		cache_endupdate();
 	}
 
+	pfctl_free_states(&ps);
+
 	num_disp = num_states;
 	return 0;
 }
