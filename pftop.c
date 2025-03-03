@@ -730,11 +730,7 @@ read_states(void)
 		cache_endupdate();
 	}
 
-	while (!TAILQ_EMPTY(&ps.states)) {
-		i = TAILQ_FIRST(&ps.states);
-		TAILQ_REMOVE(&ps.states, i, entry);
-		free(i);
-	}
+	pfctl_free_states(&ps);
 
 	num_disp = num_states;
 	return 0;
