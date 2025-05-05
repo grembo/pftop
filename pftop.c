@@ -1081,7 +1081,7 @@ read_anchor_rules(char *anchor)
 		 * anchor name */
 		rule.anchor = (struct pfctl_anchor *) anchor;
 		{
-			int len = strlen(pr.rule.label);
+			int len = strlen(rule.label[0]);
 			if (len > label_length)
 				label_length = len;
 		}
