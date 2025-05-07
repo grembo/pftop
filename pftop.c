@@ -1038,12 +1038,12 @@ add_rule_alloc(u_int32_t nr)
 	num_rules += nr;
 
 	if (rules == NULL) {
-		rules = malloc(num_rules * sizeof(struct pf_rule));
+		rules = malloc(num_rules * sizeof(struct pfctl_rule));
 		if (rules == NULL)
 			err(1, "malloc");
 		alloc_rules = num_rules;
 	} else if (num_rules > alloc_rules) {
-		rules = realloc(rules, num_rules * sizeof(struct pf_rule));
+		rules = realloc(rules, num_rules * sizeof(struct pfctl_rule));
 		if (rules == NULL)
 			err(1, "realloc");
 		alloc_rules = num_rules;
@@ -1081,7 +1081,7 @@ read_anchor_rules(char *anchor)
 		 * anchor name */
 		rule.anchor = (struct pfctl_anchor *) anchor;
 		{
-			int len = strlen(pr.rule.label);
+			int len = strlen(rule.label[0]);
 			if (len > label_length)
 				label_length = len;
 		}
